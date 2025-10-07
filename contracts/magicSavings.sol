@@ -84,7 +84,7 @@ contract magicSavings {
         uint256 reward = earned[msg.sender];
         if (reward > 0) {
             earned[msg.sender] = 0;
-            rewardToken.transfer(msg.sender, reward);
+            rewardToken.safeTransfer(msg.sender, reward);
         }
 
         return reward;

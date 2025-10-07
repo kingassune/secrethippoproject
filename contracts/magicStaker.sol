@@ -208,6 +208,18 @@ contract magicStaker {
     // ------------------------------------------------------------------------
     // USER WEIGHTING
     // ------------------------------------------------------------------------
+    /**
+     * @notice Claim any magic pounder share difference and sync strategy balances
+     * @dev Unclaimed shares earn compounder yield and do not contribute to other strategies
+     */
+    function claimAndSync() external {
+        require(magicBalanceOf[msg.sender] > 0, "0");
+        // claim any magic pounder share difference
+        _syncMagicBalance(msg.sender);
+        // change user strategy balances to reflect any yield
+        _syncAccount(msg.sender);
+    }
+
     function setWeights(uint256[] memory _weights) public {
         // can only change weights once per epoch to avoid front-running harvests
         require(accountWeightEpoch[msg.sender] < getEpoch(), "!epoch");

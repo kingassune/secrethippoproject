@@ -12,6 +12,8 @@ Non-transferable / Not a token. Staker dictates balances of strategies.
 
 Since voting power is not tracked 1:1 with Resupply, significantly increasing ones stake incurs a vote delay.
 
+Requires a local quorum of 20% in order to commit vote to Resupply
+
 Since there may be small rounding issues from staker dictating strategy balances, weights can only be changed once per epoch.
 
-Since compounder is more likely to incur rounding issues, a very small fee is applied to claimed yield.
+Since compounder is capable of creating rounding errors on staker's side, a very small fee is applied when yield is synced with balance.

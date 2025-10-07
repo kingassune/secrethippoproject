@@ -51,10 +51,12 @@ contract magicPounder {
         require(totalSupply > 0, "No users");
         return ((sharesOf[user] * underlyingTotalSupply) / totalSupply);
     }
+    
     function underlyingToShares(uint256 _amount) public view returns (uint256) {
         if(totalSupply == 0) {
             return _amount;
         }
+        require(_amount * totalSupply >= underlyingTotalSupply, "!small");
         return (_amount * totalSupply) / underlyingTotalSupply;
     }
 
