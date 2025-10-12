@@ -8,6 +8,7 @@
 
 pragma solidity ^0.8.25;
 
+import { OperatorManager } from "./operatorManager.sol";
 
 interface Voter {
     struct Vote {
@@ -30,13 +31,12 @@ interface MagicStaker {
     function castVote(uint256 id, uint256 totalYes, uint256 totalNo) external;
 }
 
-contract magicRsupVoter {
+contract magicVoter is OperatorManager {
     uint256 public constant MAX_PCT = 10000;
     uint256 public constant EXECUTE_AFTER = 4 days;
 
     Voter public voter = Voter(0x11111111063874cE8dC6232cb5C1C849359476E6);
     MagicStaker public magicStaker;
-    address public manager;
 
     struct VoteTotals {
         uint256 yes;
@@ -52,10 +52,8 @@ contract magicRsupVoter {
     mapping(uint256 => VoteTotals) public voteTotals; // proposalId => VoteTotals
     mapping(uint256 => bool) public executed; // proposalId => executed
 
-    constructor(address _magicStaker) {
-        magicStaker = MagicStaker(_magicStaker);
-        manager = msg.sender;
-    }
+    constructor(address _operator, address _manager) OperatorManager(_operator, _manager) {}
+
 
     function canVote(uint256 id) public returns(bool _canVote, uint32 _createdAt) {
 
@@ -121,6 +119,9 @@ contract magicRsupVoter {
         magicStaker.castVote(id, totals.yes, totals.no);
     }
 
-        
+    // doesn't need to be immutable since this contract does not handle balances
+    function setMagicStaker(address _magicStaker) external onlyOperator {
+        magicStaker = MagicStaker(_magicStaker);
+    }
 
 }

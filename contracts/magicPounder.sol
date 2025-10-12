@@ -10,40 +10,28 @@
     function processRewards() external;
 */ 
 
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.30;
 
 import { IERC20, SafeERC20 } from '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
-
-interface Harvester {
-    function process(address _tokenIn, address _tokenOut) external returns (uint256);
-}
+import { OperatorManager } from "./operatorManager.sol";
 
 interface MagicStaker {
     function magicStake(uint256 _amount) external;
 }
 
-contract magicPounder {
+contract magicPounder is OperatorManager {
     using SafeERC20 for IERC20;
-    address public manager;
-    address public immutable magicStaker;
     address public constant desiredToken = 0x419905009e4656fdC02418C7Df35B1E61Ed5F726;
+    address public magicStaker;
     uint256 public totalSupply;
     uint256 public underlyingTotalSupply;
     // user shares - balanceOf is reserved for underlying balance for magicStaker interoperability
     mapping(address account => uint256) public sharesOf;
 
-    constructor (address _magicStaker) {
-        magicStaker = _magicStaker;
-        IERC20(desiredToken).approve(magicStaker, type(uint256).max);
-        manager = msg.sender;
-    }
+    constructor (address _operator, address _manager) OperatorManager(_operator, _manager) {}
 
     modifier onlyMagicStaker {
         require(msg.sender == magicStaker, "!auth");
-        _;
-    }
-    modifier managed() {
-        require(msg.sender == manager, "!manager");
         _;
     }
 
@@ -92,8 +80,10 @@ contract magicPounder {
         underlyingTotalSupply += _amount;
     }
 
-    // Transfer manager
-    function setManager(address _newManager) external managed {
-        manager = _newManager;
+    // needs to be immutable since this contract handles balances
+    function setMagicStaker(address _magicStaker) external onlyOperator {
+        require(_magicStaker != address(0), "!zero");
+        magicStaker = _magicStaker;
+        IERC20(desiredToken).approve(magicStaker, type(uint256).max);
     }
 }

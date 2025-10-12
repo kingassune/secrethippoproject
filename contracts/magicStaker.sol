@@ -19,6 +19,7 @@
 pragma solidity ^0.8.25;
 
 import { IERC20, SafeERC20 } from '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
+import { OperatorManager } from "./operatorManager.sol";
 
 interface Staker {
     function stake(uint _amount) external returns (uint);
@@ -43,7 +44,7 @@ interface Voter {
     function voteForProposal(address account, uint256 id, uint256 pctYes, uint256 pctNo) external;
 }
 
-contract magicStaker {
+contract magicStaker is OperatorManager {
     using SafeERC20 for IERC20;
 
     // ------------------------------------------------------------------------
@@ -53,12 +54,6 @@ contract magicStaker {
     uint256 public constant MAX_CALL_FEE = 50000;  // 0.5 %
     uint256 public constant MAX_MAGIC_FEE = 10000; // 0.1 %
     uint256 public constant MAX_PCT = 10000;
-
-    // ------------------------------------------------------------------------
-    // ROLES / MANAGEMENT
-    // ------------------------------------------------------------------------
-    address public emergencyOperator;
-    address public manager;
 
     // ------------------------------------------------------------------------
     // FEES (mutable)
@@ -126,13 +121,10 @@ contract magicStaker {
     // ------------------------------------------------------------------------
     // CONSTRUCTOR
     // ------------------------------------------------------------------------
-    constructor(address _magicPounder, address _magicVoter) {
+    constructor(address _magicPounder, address _magicVoter, address _operator, address _manager) OperatorManager(_operator, _manager) {
         // pre-approve staker
         rsup.approve(address(staker), type(uint256).max);
 
-        // set initial manager/emergencyOperator
-        emergencyOperator = msg.sender;
-        manager = msg.sender;
         magicVoter = _magicVoter;
 
         // strategy 0 is immutable magic compounder
@@ -141,19 +133,6 @@ contract magicStaker {
         // add reusd to rewards
         rewards.push(IERC20(0x57aB1E0003F623289CD798B1824Be09a793e4Bec));
         isRewardToken[0x57aB1E0003F623289CD798B1824Be09a793e4Bec] = true;
-    }
-
-    // ------------------------------------------------------------------------
-    // MODIFIERS
-    // ------------------------------------------------------------------------
-    modifier eOp() {
-        require(msg.sender == emergencyOperator, "!Operator");
-        _;
-    }
-
-    modifier managed() {
-        require(msg.sender == manager, "!manager");
-        _;
     }
 
     // ------------------------------------------------------------------------
@@ -519,14 +498,14 @@ contract magicStaker {
     }
 
     // Add reward token
-    function addRewardToken(address _rewardToken) external managed {
+    function addRewardToken(address _rewardToken) external onlyManager {
         require(!isRewardToken[_rewardToken], "!exists");
         isRewardToken[_rewardToken] = true;
         rewards.push(IERC20(_rewardToken));
     }
 
     // Remove reward token
-    function removeRewardToken(uint256 _rewardIndex, address _rewardToken) external managed {
+    function removeRewardToken(uint256 _rewardIndex, address _rewardToken) external onlyManager {
         require(address(rewards[_rewardIndex]) == _rewardToken, "!mismatchId");
         isRewardToken[_rewardToken] = false;
         // replace index with last index
@@ -535,18 +514,18 @@ contract magicStaker {
     }
 
     // Set strategy harvester
-    function setStrategyHarvester(address _strategy, address _harvester) external managed {
+    function setStrategyHarvester(address _strategy, address _harvester) external onlyManager {
         strategyHarvester[_strategy] = _harvester;
     }
 
     // set call fee
-    function setCallFee(uint256 _fee) external managed {
+    function setCallFee(uint256 _fee) external onlyManager {
         require(_fee <= MAX_CALL_FEE, "!max");
         CALL_FEE = _fee;
     }
 
     // set magic fee
-    function setMagicFee(uint256 _fee) external managed {
+    function setMagicFee(uint256 _fee) external onlyManager {
         require(_fee <= MAX_MAGIC_FEE, "!max");
         MAGIC_FEE = _fee;
     }
@@ -555,13 +534,13 @@ contract magicStaker {
     // EMERGENCY FUNCTIONS
     // ------------------------------------------------------------------------
     // Transfer manager
-    function setManager(address _newManager) external eOp {
+    function setManager(address _newManager) external onlyOperator {
         manager = _newManager;
     }
 
     // Transfer emergency powers
-    function setEmergencyOperator(address _newOperator) external eOp {
-        emergencyOperator = _newOperator;
+    function setOperator(address _newOperator) external onlyOperator {
+        operator = _newOperator;
     }
 
     // Emergency executable function
@@ -569,7 +548,7 @@ contract magicStaker {
         address _to,
         uint256 _value,
         bytes calldata _data
-    ) external eOp returns (bool, bytes memory) {
+    ) external onlyOperator returns (bool, bytes memory) {
         (bool success, bytes memory result) = _to.call{value: _value}(_data);
         return (success, result);
     }

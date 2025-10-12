@@ -18,11 +18,21 @@
         route[3] = { pool: 0xEe351f12EAE8C2B8B9d1B9BFd3c5dd565234578d, tokenIn: WETH, tokenOut: RSUP, functionType: 0 } // curve exchange
 */ 
 
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.30;
 
 import { IERC20, SafeERC20 } from '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
+import { OperatorManager } from "./operatorManager.sol";
 
 interface CurvePool {
+    function exchange(
+        int128 i,
+        int128 j,
+        uint256 _dx,
+        uint256 _min_dy
+    ) external payable returns (uint256);
+}
+
+interface AltCurvePool {
     function exchange(
         uint256 i,
         uint256 j,
@@ -39,9 +49,8 @@ interface Strategy {
     function desiredToken() external view returns (address);
 }
 
-contract magicHarvester {
+contract magicHarvester is OperatorManager {
     using SafeERC20 for IERC20;
-    address public manager;
 
     struct Route {
         address pool;
@@ -55,18 +64,7 @@ contract magicHarvester {
     mapping(address => mapping(address => Route[])) public routes; // tokenIn => tokenOut => route[]
     mapping(address => bool) public rewardCaller;
 
-    modifier onlyManager() {
-        require(msg.sender == manager, "Not manager");
-        _;
-    }
-
-    constructor(address _manager) {
-        manager = _manager;
-    }
-
-    function setManager(address _manager) external onlyManager {
-        manager = _manager;
-    }
+    constructor(address _operator, address _manager) OperatorManager(_operator, _manager) {}
 
     function addRewardCaller(address _caller) external onlyManager {
         rewardCaller[_caller] = true;
@@ -75,6 +73,9 @@ contract magicHarvester {
         rewardCaller[_caller] = false;
     }
 
+    function getRoute(address _tokenIn,  address _tokenOut) external view returns (Route[] memory) {
+        return routes[_tokenIn][_tokenOut];
+    }
 
     function setRoute(
         address _tokenIn,
@@ -82,7 +83,7 @@ contract magicHarvester {
         address _tokenOut,
         uint256 _testAmount,
         bool _removeApprovals
-    ) external onlyManager {
+    ) external  {
         // can pass 0 routes to delete existing route, otherwise needs validation and test
         if(_routes.length > 0) {
             require(_routes[0].tokenIn == _tokenIn, "!start");
@@ -115,7 +116,6 @@ contract magicHarvester {
 
         // test route
         _process(_tokenIn, _tokenOut, _testAmount);
-        require(IERC20(_tokenOut).balanceOf(address(this)) > 0, "!output");
         IERC20(_tokenOut).safeTransfer(msg.sender, IERC20(_tokenOut).balanceOf(address(this)));
     }
 
@@ -144,11 +144,17 @@ contract magicHarvester {
             if (route.functionType == 0) {
                 // curve exchange
                 IERC20(route.tokenIn).approve(route.pool, bal);
-                CurvePool(route.pool).exchange(0, 1, bal, 0);
+                CurvePool(route.pool).exchange{value: 0}(int128(int256(route.indexIn)), int128(int256(route.indexOut)), bal, 0);
             } else if (route.functionType == 1) {
                 // scrvUSD redeem
                 IERC20(route.tokenIn).approve(route.pool, bal);
                 ScrvUSD(route.pool).redeem(bal, address(this), address(this));
+            } else if (route.functionType == 2) {
+                // alt curve exchange
+                IERC20(route.tokenIn).approve(route.pool, bal);
+                AltCurvePool(route.pool).exchange{value: 0}(route.indexIn, route.indexOut, bal, 0);
+            } else {
+                revert("!function");
             }
             require(IERC20(route.tokenIn).balanceOf(address(this)) == 0, "!spent");
         }
