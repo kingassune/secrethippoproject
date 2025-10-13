@@ -16,7 +16,7 @@
     This is to save on gas and not track account checkpoints, while maintaining a level 
     of safety and regard towards Resupply governance alignment
 */
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.30;
 
 import { IERC20, SafeERC20 } from '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
 import { OperatorManager } from "./operatorManager.sol";
@@ -26,18 +26,19 @@ interface Staker {
     function cooldown(address _account, uint _amount) external returns (uint);
     function unstake(address _account, address _receiver) external returns (uint);
     function getReward(address _account) external;
-    function cooldownEpochs() external returns (uint);
+    function cooldownEpochs() external view returns (uint);
 }
 
 interface Strategy {
     function setUserBalance(address _account, uint256 _balance) external;
-    function balanceOf(address _account) external returns (uint256);
+    function balanceOf(address _account) external view returns (uint256);
     function totalSupply() external returns (uint256);
     function notifyReward(uint256 _amount) external;
+    function desiredToken() external view returns(address);
 }
 
 interface Harvester {
-    function process(address[] memory _tokenIn, uint256[] memory _amountsIn, address _strategy) external returns (uint256);
+    function process(address[10] memory _tokenIn, uint256[10] memory _amountsIn, address _strategy) external returns (uint256);
 }
 
 interface Voter {
@@ -96,7 +97,7 @@ contract magicStaker is OperatorManager {
 
     // strategy indexing & account weights
     address[] public strategies;
-    mapping(address => uint256[]) public accountStrategyWeight;
+    mapping(address => mapping(uint256 => uint256)) public accountStrategyWeight;
     mapping(address => uint256) public accountWeightEpoch;
 
     // helpers for strategies
@@ -109,7 +110,7 @@ contract magicStaker is OperatorManager {
     address public magicVoter;
 
     // ------------------------------------------------------------------------
-    // IMMUTABLE/UTILITY: epoch function
+    // VIEWs
     // ------------------------------------------------------------------------
     /**
      * @notice Current Resupply epoch
@@ -118,6 +119,15 @@ contract magicStaker is OperatorManager {
         return (block.timestamp - 1741824000) / 604800;
     }
 
+    function isCooldownEpoch() public view returns (bool) {
+        uint256 cde = staker.cooldownEpochs();
+        uint256 epoch = getEpoch();
+        if(epoch % (cde + 1) == 0) {
+            return true;
+        } else {
+            return false;
+        }
+    }
     // ------------------------------------------------------------------------
     // CONSTRUCTOR
     // ------------------------------------------------------------------------
@@ -154,18 +164,16 @@ contract magicStaker is OperatorManager {
         return supply;
     }
 
-    function strategyBalanceOf(address _strategy, address _account) public returns (uint256) {
+    function strategyBalanceOf(address _strategy, address _account) public view returns (uint256) {
         return Strategy(_strategy).balanceOf(_account);
     }
 
-    function unclaimedMagicTokens(address _account) public returns (uint256) {
+    function unclaimedMagicTokens(address _account) public view returns (uint256) {
         uint256 userMagic = magicBalanceOf[_account];
-        if (userMagic > 0) {
-            uint256 currentMagicBalance = Strategy(strategies[0]).balanceOf(_account);
-            if (currentMagicBalance > userMagic) {
-                uint256 diff = ((currentMagicBalance - userMagic) * MAGIC_FEE) / DENOM;
-                return diff;
-            }
+        uint256 currentMagicBalance = Strategy(strategies[0]).balanceOf(_account);
+        if (currentMagicBalance > userMagic) {
+            uint256 diff = ((currentMagicBalance - userMagic) * MAGIC_FEE) / DENOM;
+            return diff;
         }
         return 0;
     }
@@ -192,7 +200,7 @@ contract magicStaker is OperatorManager {
      * @dev Unclaimed shares earn compounder yield and do not contribute to other strategies
      */
     function claimAndSync() external {
-        require(magicBalanceOf[msg.sender] > 0, "0");
+        require(unclaimedMagicTokens(msg.sender) > 0, "0");
         // claim any magic pounder share difference
         _syncMagicBalance(msg.sender);
         // change user strategy balances to reflect any yield
@@ -228,28 +236,30 @@ contract magicStaker is OperatorManager {
         uint256 slen = strategies.length;
         uint256 assignedBalance;
         uint256 assignedWeight;
+        uint256 accountBalance = balanceOf[_account];
 
         for (uint256 i = 0; i < slen; ++i) {
             uint256 weight = accountStrategyWeight[_account][i];
-
-            if (assignedWeight + weight == DENOM) {
+            if(weight == 0) {
+                _setUserStrategyBalance(strategies[i], _account, 0);
+            } else if(accountBalance == 0) {
+                assignedWeight+=weight;
+                _setUserStrategyBalance(strategies[i], _account, 0);
+            } else if (assignedWeight + weight == DENOM) {
                 // last strategy, assign all remaining balance to avoid rounding issues
-                uint256 amount = balanceOf[_account] - assignedBalance;
+                uint256 amount = accountBalance - assignedBalance;
                 _setUserStrategyBalance(strategies[i], _account, amount);
-                /* if this return is removed in order to run additional logic,
-                   you must add assigned balance and weight to avoid 0 weight
-                   strategies being assigned a balance (DENOM+0==DENOM) */
-                return;
+                assignedBalance += amount;
+                assignedWeight += weight;
             } else {
-                uint256 amount = (balanceOf[_account] * weight) / DENOM;
+                uint256 amount = (accountBalance * weight) / DENOM;
                 _setUserStrategyBalance(strategies[i], _account, amount);
                 assignedBalance += amount;
                 assignedWeight += weight;
             }
         }
-
-        // fail if reaching this point (unexpected behavior)
-        require(false, "!weight");
+        require(assignedBalance <= accountBalance, "!bal");
+        require(assignedWeight == DENOM, "!weight");
     }
 
     // checks starting balance first to avoid unneeded write calls
@@ -409,8 +419,8 @@ contract magicStaker is OperatorManager {
         // claim all rewards from staker
         staker.getReward(address(this));
 
-        address[] memory positiveRewards;
-        uint256[] memory rewardBals;
+        address[10] memory positiveRewards;
+        uint256[10] memory rewardBals;
 
         // give caller their cut of all rewards
         for (uint256 r = 0; r < rewards.length; ++r) {
@@ -426,8 +436,8 @@ contract magicStaker is OperatorManager {
             // give caller their cut
             uint256 callerFee = (rewardBal * CALL_FEE) / DENOM;
             rewards[r].safeTransfer(msg.sender, callerFee);
-            positiveRewards[positiveRewards.length] = address(rewards[r]);
-            rewardBals[rewardBals.length] = rewardBal - callerFee;
+            positiveRewards[r] = address(rewards[r]);
+            rewardBals[r] = rewardBal - callerFee;
         }
 
         // distribute rewards to strategies based on their assigned balance
@@ -438,8 +448,11 @@ contract magicStaker is OperatorManager {
                 continue;
             }
             require(strategyHarvester[strategy] != address(0), "!harvester");
-            uint256[] memory stratShares = new uint256[](rewardBals.length);
+            uint256[10] memory stratShares;
             for (uint256 r = 0; r < rewardBals.length; ++r) {
+                if(positiveRewards[r] == address(0)) {
+                    break;
+                }
                 stratShares[r] = (rewardBals[r] * stratSupply) / totalSupply;
             }
             // process rewards for strategy
@@ -476,26 +489,6 @@ contract magicStaker is OperatorManager {
     // ------------------------------------------------------------------------
     // MANAGER FUNCTIONS
     // ------------------------------------------------------------------------
-    // Add strategy
-    function addStrategy(address _strategy) external {
-        // Strategy must allow this contract to set user balances
-        // Ensuring functionality/safety of strategy is outside of this scope
-        // But this function is essential to THIS contract not breaking
-
-        Strategy strategy = Strategy(_strategy);
-
-        // Verify adding balance
-        strategy.setUserBalance(address(1234), DENOM);
-        require(strategy.balanceOf(address(1234)) == DENOM, "!balance1");
-        require(strategy.totalSupply() == DENOM, "!supply1");
-
-        // Verify removing balance
-        strategy.setUserBalance(address(1234), 0);
-        require(strategy.balanceOf(address(1234)) == 0, "!balance0");
-        require(strategy.totalSupply() == 0, "!supply0");
-
-        strategies.push(_strategy);
-    }
 
     // Add reward token
     function addRewardToken(address _rewardToken) external onlyManager {
@@ -516,6 +509,9 @@ contract magicStaker is OperatorManager {
     // Set strategy harvester
     function setStrategyHarvester(address _strategy, address _harvester) external onlyManager {
         strategyHarvester[_strategy] = _harvester;
+        for(uint256 i = 0; i<rewards.length; ++i) {
+            rewards[i].approve(_harvester, type(uint256).max);
+        }
     }
 
     // set call fee
@@ -531,19 +527,47 @@ contract magicStaker is OperatorManager {
     }
 
     // ------------------------------------------------------------------------
-    // EMERGENCY FUNCTIONS
+    // Operator FUNCTIONS
     // ------------------------------------------------------------------------
+
+    // Add strategy
+    function addStrategy(address _strategy) external onlyOperator {
+        // Strategy must allow this contract to set user balances
+        // Ensuring functionality/safety of strategy is outside of this scope
+        // But this function is essential to THIS contract not breaking
+
+        Strategy strategy = Strategy(_strategy);
+
+        // Verify strategy has a desiredToken and that it is not RSUP
+        address dt = strategy.desiredToken();
+        require(dt != address(0) && dt != address(rsup), "!desiredToken");
+
+        IERC20(dt).approve(_strategy, type(uint256).max);
+
+        // Verify adding balance
+        strategy.setUserBalance(address(1234), DENOM);
+        require(strategy.balanceOf(address(1234)) == DENOM, "!balance1");
+        require(strategy.totalSupply() == DENOM, "!supply1");
+
+        // Verify removing balance
+        strategy.setUserBalance(address(1234), 0);
+        require(strategy.balanceOf(address(1234)) == 0, "!balance0");
+        require(strategy.totalSupply() == 0, "!supply0");
+
+        strategies.push(_strategy);
+    }
+
     // Transfer manager
     function setManager(address _newManager) external onlyOperator {
         manager = _newManager;
     }
 
-    // Transfer emergency powers
+    // Transfer operator powers
     function setOperator(address _newOperator) external onlyOperator {
         operator = _newOperator;
     }
 
-    // Emergency executable function
+    // Fallback executable function
     function execute(
         address _to,
         uint256 _value,

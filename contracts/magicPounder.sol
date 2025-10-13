@@ -36,7 +36,9 @@ contract magicPounder is OperatorManager {
     }
 
     function balanceOf(address user) public view returns (uint256 amount) {
-        require(totalSupply > 0, "No users");
+        if(totalSupply == 0) {
+            return 0;
+        }
         return ((sharesOf[user] * underlyingTotalSupply) / totalSupply);
     }
     

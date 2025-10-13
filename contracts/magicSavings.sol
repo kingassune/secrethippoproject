@@ -7,6 +7,7 @@ contract magicSavings {
     using SafeERC20 for IERC20;
     IERC20 public immutable rewardToken;
     address public immutable magicStaker;
+    address public constant desiredToken = 0x557AB1e003951A73c12D16F0fEA8490E39C33C35;
 
     mapping(address => uint256) public balanceOf;
     uint256 public totalSupply;
@@ -27,7 +28,6 @@ contract magicSavings {
     }
 
     function notifyReward(uint256 _amount) external onlyMagicStaker {
-        rewardToken.safeTransferFrom(msg.sender, address(this), _amount);
         rewardIndex += (_amount * MULTIPLIER) / totalSupply;
     }
 

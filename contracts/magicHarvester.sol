@@ -45,6 +45,11 @@ interface ScrvUSD {
     function redeem(uint256 shares, address receiver, address owner) external returns (uint256);
 }
 
+interface SreUSD {
+    function deposit(uint256 _assets, address _receiver) external;
+    function redeem(uint256 _shares, address _receiver, address _owner) external;
+}
+
 interface Strategy {
     function desiredToken() external view returns (address);
 }
@@ -119,12 +124,14 @@ contract magicHarvester is OperatorManager {
         IERC20(_tokenOut).safeTransfer(msg.sender, IERC20(_tokenOut).balanceOf(address(this)));
     }
 
-    function process(address[] memory _tokensIn, uint256[] memory _amountsIn, address _strategy) external returns (uint256 tokenOutBal) {
+    function process(address[10] memory _tokensIn, uint256[10] memory _amountsIn, address _strategy) external returns (uint256 tokenOutBal) {
         require(rewardCaller[msg.sender], "!auth");
-        require(_tokensIn.length == _amountsIn.length, "!length");
         address strategyToken = Strategy(_strategy).desiredToken();
         require(strategyToken != address(0), "!tokenOut");
         for (uint256 i = 0; i < _tokensIn.length; i++) {
+            if(_tokensIn[i] == address(0)) {
+                break;
+            }
             require(routes[_tokensIn[i]][strategyToken].length > 0, "!route");
             _process(_tokensIn[i], strategyToken, _amountsIn[i]);
         }
@@ -153,6 +160,10 @@ contract magicHarvester is OperatorManager {
                 // alt curve exchange
                 IERC20(route.tokenIn).approve(route.pool, bal);
                 AltCurvePool(route.pool).exchange{value: 0}(route.indexIn, route.indexOut, bal, 0);
+            } else if (route.functionType == 3) {
+                // sreUSD exchange
+                IERC20(route.tokenIn).approve(route.pool, bal);
+                SreUSD(route.pool).deposit(bal, address(this));
             } else {
                 revert("!function");
             }

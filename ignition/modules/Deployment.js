@@ -51,10 +51,10 @@ const MagicHarvesterModule = buildModule("DeployMagicHarvester", (m) => {
 
 const MagicSavingsModule = buildModule("DeployMagicSavings", (m) => {
 
-    const operator = m.getParameter("_operator", _operator);
-    const manager = m.getParameter("_manager", _manager);
+    const magicStaker = m.getParameter("_magicStaker", "0x0000000000000000000000000000000000000000");
+    const rewardToken = m.getParameter("_rewardToken", "0x0000000000000000000000000000000000000000");
 
-    const MagicSavings = m.contract("magicSavings", [operator, manager]);
+    const MagicSavings = m.contract("magicSavings", [magicStaker, rewardToken]);
 
     return { MagicSavings };
 });
