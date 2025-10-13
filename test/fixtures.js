@@ -13,6 +13,10 @@ var erc20Abi = [
     "function allowance(address owner, address spender) external view returns (uint256)",
 ];
 
+var stakerAbi = [
+    "function earned(address _account, address _rewardToken) external view returns (uint256)",
+]
+
 async function reUSDSetUp() {
     var reUSD;
     var reUSDAddress = "0x57aB1E0003F623289CD798B1824Be09a793e4Bec";
@@ -34,11 +38,18 @@ async function sreUSDSetUp() {
     return sreUSD;
 }
 
+async function stakerSetUp() {
+    var staker;
+    var stakerAddress = "0x22222222E9fE38F6f1FC8C61b25228adB4D8B953";
+    staker = new ethers.Contract(stakerAddress, stakerAbi, ethers.provider);
+    return staker;
+}
 
 async function setUpSmartContracts() {
     var reUSD = await reUSDSetUp();
     var RSUP = await RSUPSetUp();
     var sreUSD = await sreUSDSetUp();
+    var staker = await stakerSetUp();
 
     var operator = "0xAdE9e51C9E23d64E538A7A38656B78aB6Bcc349e";
     var manager = "0xdC7C7F0bEA8444c12ec98Ec626ff071c6fA27a19";
@@ -75,7 +86,7 @@ async function setUpSmartContracts() {
     },
     });
 
-    var staker = await MagicStaker.getAddress();
+    var magicStakerAddress = await MagicStaker.getAddress();
 
     const { MagicHarvester } = await ignition.deploy(MagicHarvesterModule, {
     parameters: {
@@ -90,14 +101,14 @@ async function setUpSmartContracts() {
     const { MagicSavings } = await ignition.deploy(MagicSavingsModule, {
     parameters: {
         DeployMagicSavings: {
-        _magicStaker: staker,
+        _magicStaker: magicStakerAddress,
         _rewardToken: sreUSDAddress,
         },
     },
     });
 
 
-    return { MagicPounder, MagicVoter, MagicStaker, MagicHarvester, MagicSavings, manager, operator, reUSD, RSUP, sreUSD };
+    return { MagicPounder, MagicVoter, MagicStaker, MagicHarvester, MagicSavings, manager, operator, reUSD, RSUP, sreUSD, staker };
 }
 
 module.exports = { setUpSmartContracts };

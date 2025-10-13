@@ -14,8 +14,8 @@ describe("Setup", function () {
     // contracts and addresses
     let MagicPounder, MagicVoter, MagicStaker, MagicHarvester, MagicSavings;
     let MagicPounderAddress, MagicVoterAddress, MagicStakerAddress, MagicHarvesterAddress, MagicSavingsAddress, manager, operator;
-    let reUSD, RSUP, sreUSD;
-    let reUSDAddress, RSUPAddress, sreUSDAddress;
+    let reUSD, RSUP, sreUSD, staker;
+    let reUSDAddress, RSUPAddress, sreUSDAddress, stakerAddress;
     let signers = {users:[]}
     let users = [
         "0x0000000000000000000000000000000000000001",
@@ -30,16 +30,16 @@ describe("Setup", function () {
     ];
 
     before(async function () {
-        ({ MagicPounder, MagicVoter, MagicStaker, MagicHarvester, MagicSavings, manager, operator, reUSD, RSUP, sreUSD } = await loadFixture(setUpSmartContracts));
+        ({ MagicPounder, MagicVoter, MagicStaker, MagicHarvester, MagicSavings, manager, operator, reUSD, RSUP, sreUSD, staker } = await loadFixture(setUpSmartContracts));
         MagicPounderAddress = await MagicPounder.getAddress();
         MagicVoterAddress = await MagicVoter.getAddress();
         MagicStakerAddress = await MagicStaker.getAddress();
         MagicHarvesterAddress = await MagicHarvester.getAddress();
         MagicSavingsAddress = await MagicSavings.getAddress();
-        reUSDAddress = reUSD.getAddress();
-        RSUPAddress = RSUP.getAddress();
-        sreUSDAddress = sreUSD.getAddress();
-
+        reUSDAddress = await reUSD.getAddress();
+        RSUPAddress = await RSUP.getAddress();
+        sreUSDAddress = await sreUSD.getAddress();
+        stakerAddress = await staker.getAddress();
 
         await impersonateAccount(manager);
         signers.manager = await ethers.getSigner(manager);
@@ -184,7 +184,7 @@ describe("Setup", function () {
             for(var i=0; i<5; i++) {
                 var strat0w = Math.floor(Math.random()*10000000);
                 var strat1w = 10000000 - strat0w;
-                expect(await MagicStaker.connect(signers.users[i]).setWeights([strat0w, strat1w])).to.be.not.reverted;
+                expect(await MagicStaker.connect(signers.users[i]).setWeights([5000000, 5000000])).to.be.not.reverted;
             }
         });
         it("Should have users give token approval", async () => {
@@ -224,15 +224,43 @@ describe("Setup", function () {
             }
         });
         it("Should harvest rewards", async () => {
+            var earned = await staker.earned(MagicStakerAddress, reUSDAddress);
+            console.log(`Claiming ${(earned/10n**18n)} reUSD from staker`);
+
+            var RSUPbalBefore = await RSUP.balanceOf(MagicStakerAddress);
+            var reUSDbalBefore = await reUSD.balanceOf(MagicStakerAddress);
+        
+            var mPuSBefore = await MagicPounder.underlyingTotalSupply();
+            var mPtSBefore = await MagicPounder.totalSupply();
+
             expect(await MagicStaker.connect(signers.operator).harvest()).to.be.not.reverted;
+
+            var RSUPbalAfter = await RSUP.balanceOf(MagicStakerAddress);
+            var reUSDbalAfter = await reUSD.balanceOf(MagicStakerAddress);
+
+            var mPuSAfter = await MagicPounder.underlyingTotalSupply();
+            var mPtSAfter = await MagicPounder.totalSupply();
+            
+            console.log(`RSUP before: ${RSUPbalBefore} RSUP after: ${RSUPbalAfter}`);
+            console.log(`reUSD before: ${reUSDbalBefore} re after: ${reUSDbalAfter}`);
+            console.log(`Underlying supply before: ${mPuSBefore} , After: ${mPuSAfter}`);
+            console.log(`Total supply before: ${mPtSBefore} , After: ${mPtSAfter}`)
         });
         it("Should increase unclaimedMagicTokens() of users 0-2", async () => {
             for(var i=0; i<5; i++) {
                 var umt = await MagicStaker.unclaimedMagicTokens(users[i]);
                 var w = await MagicStaker.accountStrategyWeight(users[i], 0);
-                console.log(`User ${i} has ${umt} with weight of ${w}`);
+                var ust = await MagicSavings.calculateRewardsEarned(users[i]);
+                var sw = await MagicStaker.accountStrategyWeight(users[i], 1);
+                console.log(`User ${i} has ${umt} RSUP with weight of ${w}`);
+                console.log(`User ${i} has ${ust} reUSD with weight of ${sw}`);
             }
         })
+        it("Should allow user 0 to cooldown including unclaimed amount", async () => {
+            var umt = await MagicStaker.unclaimedMagicTokens(users[0]);
+            await expect(MagicStaker.connect(signers.users[0]).cooldown(10000n*10n**18n + umt + 1n)).to.be.revertedWith("!balance");
+            expect(await MagicStaker.connect(signers.users[0]).cooldown(10000n*10n**18n + umt)).to.be.not.reverted;
+        });
     });
 
 });

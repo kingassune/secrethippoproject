@@ -172,7 +172,7 @@ contract magicStaker is OperatorManager {
         uint256 userMagic = magicBalanceOf[_account];
         uint256 currentMagicBalance = Strategy(strategies[0]).balanceOf(_account);
         if (currentMagicBalance > userMagic) {
-            uint256 diff = ((currentMagicBalance - userMagic) * MAGIC_FEE) / DENOM;
+            uint256 diff = ((currentMagicBalance - userMagic) * (DENOM-MAGIC_FEE)) / DENOM;
             return diff;
         }
         return 0;
@@ -281,7 +281,7 @@ contract magicStaker is OperatorManager {
         if (userMagic > 0) {
             uint256 currentMagicBalance = Strategy(strategies[0]).balanceOf(_account);
             if (currentMagicBalance > userMagic) {
-                uint256 diff = ((currentMagicBalance - userMagic) * MAGIC_FEE) / DENOM;
+                uint256 diff = ((currentMagicBalance - userMagic) * (DENOM-MAGIC_FEE)) / DENOM;
                 if (diff > 0) {
                     balanceOf[_account] += diff;
                     magicSupply -= diff;
