@@ -1,12 +1,27 @@
 # SecretHippoProject
 
-Very early drafts. Probably full of mistakes and incomplete code.
+Drafts. Not fully tested. Not audited.
 
 2nd layer Stake RSUP
 
 Can support multiple strategies, with initial two planned for compounding RSUP, and for sreusd (as opposed to current reUSD only)
 
 Non-transferable / Not a token. Staker dictates balances of strategies.
+
+### To do
+
+- Create tests for multiple harvests, claims, weight adjustments, etc., to confirm continuity
+
+- Create tests for voting:
+    - Creating proposal
+    - Voting in proposal
+    - Voting after castable time, without meeting quorum
+    - Voting after castable time, with meeting quorum
+    - Not being able to vote after significant weight increase
+
+- Peer review / Audit
+
+- UI
 
 ### Protections in place:
 

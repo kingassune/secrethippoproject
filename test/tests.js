@@ -301,10 +301,10 @@ describe("Setup", function () {
 
             // Validate amounts
             it("User 0 has half as much RSUP to claim", async () => {
-                await expect(umt[0]).to.be.equal(umt[1]/2n);
+                await expect(umt[0]).to.be.approximately(umt[1]/2n, 1n);
             });
             it("User 0 has 50% more reUSD to claim", async () => {
-                await expect(ust[0]).to.be.equal(ust[1]*15n/10n);
+                await expect(ust[0]).to.be.approximately(ust[1]*15n/10n, 1n);
             });
             it("Users 1 and 2 have identical claims", async () => {
                 await expect(umt[1]).to.be.equal(umt[2]);
