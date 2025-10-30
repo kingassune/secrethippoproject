@@ -5,17 +5,6 @@
     This is not tested. 
     You should personally audit and test this code before using it.
 
-    Must incorporate
-
-    process(rewards[r], desiredToken) external;
-
-    practice route:
-    tokenIn = reUSD
-    tokenOut = RSUP
-        route[0] = { pool: 0xc522A6606BBA746d7960404F22a3DB936B6F4F50, tokenIn: reUSD, tokenOut: scrvUSD, functionType: 0 } // curve exchange
-        route[1] = { pool: 0x0655977FEb2f289A4aB78af67BAB0d17aAb84367, tokenIn: scrvUSD, tokenOut: crvUSD, functionType: 1 } // scrvUSD redeem
-        route[2] = { pool: 0x4eBdF703948ddCEA3B11f675B4D1Fba9d2414A14, tokenIn: crvUSD, tokenOut: WETH, functionType: 0 } // curve exchange
-        route[3] = { pool: 0xEe351f12EAE8C2B8B9d1B9BFd3c5dd565234578d, tokenIn: WETH, tokenOut: RSUP, functionType: 0 } // curve exchange
 */ 
 
 pragma solidity ^0.8.30;
@@ -71,11 +60,18 @@ contract magicHarvester is OperatorManager {
 
     constructor(address _operator, address _manager) OperatorManager(_operator, _manager) {}
 
+    event AddRewardCaller(address indexed caller);
+    event RemoveRewardCaller(address indexed caller);
+    event SetRoute(address indexed tokenIn, address indexed tokenOut, uint256 routeLength);
+    event Processed(address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut);
+
     function addRewardCaller(address _caller) external onlyManager {
         rewardCaller[_caller] = true;
+        emit AddRewardCaller(_caller);
     }
     function removeRewardCaller(address _caller) external onlyManager {
         rewardCaller[_caller] = false;
+        emit RemoveRewardCaller(_caller);
     }
 
     function getRoute(address _tokenIn,  address _tokenOut) external view returns (Route[] memory) {

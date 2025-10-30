@@ -5,9 +5,6 @@
     This is not tested. 
     You should personally audit and test this code before using it.
 
-    Must incorporate
-
-    function processRewards() external;
 */ 
 
 pragma solidity ^0.8.30;

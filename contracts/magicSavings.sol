@@ -65,7 +65,7 @@ contract magicSavings {
         return (shares * (rewardIndex - rewardIndexOf[account])) / MULTIPLIER;
     }
 
-    function calculateRewardsEarned(address account)
+    function claimable(address account)
         external
         view
         returns (uint256)
