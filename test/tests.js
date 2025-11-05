@@ -14,8 +14,8 @@ describe("Setup", function () {
     // contracts and address variables used in tests
     let MagicPounder, MagicVoter, MagicStaker, MagicHarvester, MagicSavings;
     let MagicPounderAddress, MagicVoterAddress, MagicStakerAddress, MagicHarvesterAddress, MagicSavingsAddress, manager, operator;
-    let reUSD, RSUP, sreUSD, staker;
-    let reUSDAddress, RSUPAddress, sreUSDAddress, stakerAddress;
+    let reUSD, RSUP, sreUSD, staker, voter;
+    let reUSDAddress, RSUPAddress, sreUSDAddress, stakerAddress, voterAddress;
     let signers = {users:[]}
     let users = [
         "0x0000000000000000000000000000000000000001",
@@ -33,7 +33,7 @@ describe("Setup", function () {
     // setup signers for impersonated accounts
     before(async function () {
         // Load fixtures
-        ({ MagicPounder, MagicVoter, MagicStaker, MagicHarvester, MagicSavings, manager, operator, reUSD, RSUP, sreUSD, staker } = await loadFixture(setUpSmartContracts));
+        ({ MagicPounder, MagicVoter, MagicStaker, MagicHarvester, MagicSavings, manager, operator, reUSD, RSUP, sreUSD, staker, voter } = await loadFixture(setUpSmartContracts));
         
         // Get deployed contract addresses
         MagicPounderAddress = await MagicPounder.getAddress();
@@ -45,6 +45,7 @@ describe("Setup", function () {
         RSUPAddress = await RSUP.getAddress();
         sreUSDAddress = await sreUSD.getAddress();
         stakerAddress = await staker.getAddress();
+        voterAddress = await voter.getAddress();
 
         // Impersonate and fund manager and operator accounts
         await impersonateAccount(manager);
@@ -71,8 +72,9 @@ describe("Setup", function () {
             await RSUP.connect(signers.RSUPwhale).transfer(users[i], 100000n*10n**18n);
             await impersonateAccount(users[i]);
             signers.users[i] = await ethers.getSigner(users[i]);
+            await setBalance(users[i], ethers.toBigInt("10000000000000000000"));
         }
-        
+        await RSUP.connect(signers.RSUPwhale).transfer(users[8], 1000000n*10n**18n);
 
     });
 
@@ -198,7 +200,7 @@ describe("Setup", function () {
     });
 
     // Have test accounts create deposits
-    describe("Users 0-4 deposits", () => {
+    describe("Users 0-4, 8 deposits", () => {
         
         // Set weights
         it("Should have users set weights", async () => {
@@ -213,11 +215,12 @@ describe("Setup", function () {
                 strat1w = 10000000 - strat0w;
                 expect(await MagicStaker.connect(signers.users[i]).setWeights([strat0w, strat1w])).to.be.not.reverted;
             }
+            expect(await MagicStaker.connect(signers.users[8]).setWeights([strat0w, strat1w])).to.be.not.reverted;
         });
 
         // Token approval
         it("Should have users give token approval", async () => {
-            for(var i=0; i<5; i++) {
+            for(var i=0; i<9; i++) {
                 expect(await RSUP.connect(signers.users[i]).approve(MagicStakerAddress, 1000000000n*10n**18n)).to.be.not.reverted;
             }
         });
@@ -225,8 +228,9 @@ describe("Setup", function () {
         // Deposit
         it("Should have users stake/deposit", async () => {
             for(var i=0; i<5; i++) {
-                expect(await MagicStaker.connect(signers.users[i]).stake(10000n*10n**18n)).to.be.not.reverted;
+                expect(await MagicStaker.connect(signers.users[i]).stake(100000n*10n**18n)).to.be.not.reverted;
             }
+            expect(await MagicStaker.connect(signers.users[8]).stake(1000000n*10n**18n)).to.be.not.reverted;
         });
 
         // Verify weights cannot be changed in same epoch
@@ -253,20 +257,20 @@ describe("Setup", function () {
                 isCooldown = await MagicStaker.isCooldownEpoch();
                 c++;
             }
-            console.log("  > advanced "+c+" weeks to reach cooldown epoch");
+            console.log("     > advanced "+c+" weeks to reach cooldown epoch");
         });
 
         // Have some users enter cooldown before reward harvest
         it("Should have users 3 and 4 enter cooldown", async () => {
             for(var i=3; i<5; i++) {
-                expect(await MagicStaker.connect(signers.users[i]).cooldown(10000n*10n**18n)).to.be.not.reverted;
+                expect(await MagicStaker.connect(signers.users[i]).cooldown(100000n*10n**18n)).to.be.not.reverted;
             }
         });
 
         // Harvest rewards
         it("Should harvest rewards", async () => {
             var earned = await staker.earned(MagicStakerAddress, reUSDAddress);
-            console.log(`Claiming ${(earned/10n**18n)} reUSD from staker`);
+            //console.log(`Claiming ${(earned/10n**18n)} reUSD from staker`);
 
             var opBalBefore = await reUSD.balanceOf(operator);
             var mPuSBefore = await MagicPounder.underlyingTotalSupply();
@@ -291,12 +295,16 @@ describe("Setup", function () {
             var umt = []; var w = []; var ust = []; var sw = [];
             before(async function () {
                 // Prefetch values
-                for(var i=0; i<5; i++) {
+                for(var i=0; i<9; i++) {
                     umt[i] = await MagicStaker.unclaimedMagicTokens(users[i]);
                     w[i] = await MagicStaker.accountStrategyWeight(users[i], 0);
                     ust[i] = await MagicSavings.claimable(users[i]);
                     sw[i] = await MagicStaker.accountStrategyWeight(users[i], 1);
                 }
+                console.log(umt);
+                console.log(w);
+                console.log(ust);
+                console.log(sw);
             });
 
             // Validate amounts
@@ -315,72 +323,113 @@ describe("Setup", function () {
                 await expect(umt[4]).to.be.equal(0);
             });
 
-
-            // Verify compounding claim can be instantly entered into cooldown, but nothing more
-            describe("Claim + cooldown in same step", async () => {
-                it("Should allow user 0 to cooldown including unclaimed amount, but not more", async () => {
-                    var umt = await MagicStaker.unclaimedMagicTokens(users[0]);
-                    await expect(MagicStaker.connect(signers.users[0]).cooldown(10000n*10n**18n + umt + 1n)).to.be.revertedWith("!balance");
-                    expect(await MagicStaker.connect(signers.users[0]).cooldown(10000n*10n**18n + umt)).to.be.not.reverted;
-                });
-                it("User 0 should now have zero unclaimed RSUP", async () => {
-                    var umt = await MagicStaker.unclaimedMagicTokens(users[0]);
-                    await expect(umt).to.be.equal(0);
-                });
-                it("User 0 should have reduced stake by cooldown amount", async () => {
-                    var stake = await MagicStaker.balanceOf(users[0]);
-                    await expect(stake).to.be.equal(0);
-                });
-                it("User 0 should have 0 strategy balances", async () => {
-                    var strat0bal = await MagicPounder.balanceOf(users[0]);
-                    var strat1bal = await MagicSavings.balanceOf(users[0]);
-                    await expect(strat0bal).to.be.equal(0);
-                    await expect(strat1bal).to.be.equal(0);
-                });
-                it("User 0 should not be able to cooldown again", async () => {
-                    await expect(MagicStaker.connect(signers.users[0]).cooldown(1n)).to.be.revertedWith("!balance");
-                });
-                it("User 0 should still have sreUSD to claim", async () => {
-                    var claimable = await MagicSavings.claimable(users[0]);
-                    await expect(claimable).to.be.gt(0);
-                });
-                it("User 0 should claim sreUSD", async () => {
-                    var sreUSDbefore = await sreUSD.balanceOf(users[0]);
-                    expect(await MagicSavings.connect(signers.users[0]).claim()).to.be.not.reverted;
-                    var sreUSAfter = await sreUSD.balanceOf(users[0]);
-                    await expect(sreUSAfter).to.be.gt(sreUSDbefore);
-                });
-                it("User 0 should have 0 claimable sreUSD", async () => {
-                    var claimable = await MagicSavings.claimable(users[0]);
-                    await expect(claimable).to.be.equal(0);
-                });
+        });
+    });
+    describe("Post-harvest tests", () => {
+        // Verify compounding claim can be instantly entered into cooldown, but nothing more
+        describe("Claim + cooldown in same step", async () => {
+            it("Should allow user 0 to cooldown including unclaimed amount, but not more", async () => {
+                var umt = await MagicStaker.unclaimedMagicTokens(users[0]);
+                await expect(MagicStaker.connect(signers.users[0]).cooldown(100000n*10n**18n + umt + 1n)).to.be.revertedWith("!balance");
+                expect(await MagicStaker.connect(signers.users[0]).cooldown(100000n*10n**18n + umt)).to.be.not.reverted;
             });
-            describe("User 1 claims", () => {
-                it("User 1 should claim RSUP", async () => {
-                    var umt = await MagicStaker.unclaimedMagicTokens(users[1]);
-                    expect(await MagicStaker.connect(signers.users[1]).syncAccount()).to.be.not.reverted;
-                });
-                it("User 1 should have no unclaimed magic tokens", async () => {
-                    var umt = await MagicStaker.unclaimedMagicTokens(users[1]);
-                    await expect(umt).to.be.equal(0);
-                });
-                it("User 1 should have an increased stake", async () => {
-                    var stake = await MagicStaker.balanceOf(users[1]);
-                    await expect(stake).to.be.gt(10000n*10n**18n);
-                });
-                it("User 1 should claim sreUSD", async () => {
-                    var sreUSDbefore = await sreUSD.balanceOf(users[1]);
-                    expect(await MagicSavings.connect(signers.users[1]).claim()).to.be.not.reverted;
-                    var sreUSAfter = await sreUSD.balanceOf(users[1]);
-                    await expect(sreUSAfter).to.be.gt(sreUSDbefore);
-                });
-                it("User 1 should have 0 claimable sreUSD", async () => {
-                    var claimable = await MagicSavings.claimable(users[1]);
-                    await expect(claimable).to.be.equal(0);
-                });
+            it("User 0 should now have zero unclaimed RSUP", async () => {
+                var umt = await MagicStaker.unclaimedMagicTokens(users[0]);
+                await expect(umt).to.be.equal(0);
+            });
+            it("User 0 should have reduced stake by cooldown amount", async () => {
+                var stake = await MagicStaker.balanceOf(users[0]);
+                await expect(stake).to.be.equal(0);
+            });
+            it("User 0 should have 0 strategy balances", async () => {
+                var strat0bal = await MagicPounder.balanceOf(users[0]);
+                var strat1bal = await MagicSavings.balanceOf(users[0]);
+                await expect(strat0bal).to.be.equal(0);
+                await expect(strat1bal).to.be.equal(0);
+            });
+            it("User 0 should not be able to cooldown again", async () => {
+                await expect(MagicStaker.connect(signers.users[0]).cooldown(1n)).to.be.revertedWith("!balance");
+            });
+            it("User 0 should still have sreUSD to claim", async () => {
+                var claimable = await MagicSavings.claimable(users[0]);
+                await expect(claimable).to.be.gt(0);
+            });
+            it("User 0 should claim sreUSD", async () => {
+                var sreUSDbefore = await sreUSD.balanceOf(users[0]);
+                expect(await MagicSavings.connect(signers.users[0]).claim()).to.be.not.reverted;
+                var sreUSAfter = await sreUSD.balanceOf(users[0]);
+                await expect(sreUSAfter).to.be.gt(sreUSDbefore);
+            });
+            it("User 0 should have 0 claimable sreUSD", async () => {
+                var claimable = await MagicSavings.claimable(users[0]);
+                await expect(claimable).to.be.equal(0);
             });
         });
-
+        describe("User 1 claims", () => {
+            it("User 1 should claim RSUP", async () => {
+                var umt = await MagicStaker.unclaimedMagicTokens(users[1]);
+                expect(await MagicStaker.connect(signers.users[1]).syncAccount()).to.be.not.reverted;
+            });
+            it("User 1 should have no unclaimed magic tokens", async () => {
+                var umt = await MagicStaker.unclaimedMagicTokens(users[1]);
+                await expect(umt).to.be.equal(0);
+            });
+            it("User 1 should have an increased stake", async () => {
+                var stake = await MagicStaker.balanceOf(users[1]);
+                await expect(stake).to.be.gt(100000n*10n**18n);
+            });
+            it("User 1 should claim sreUSD", async () => {
+                var sreUSDbefore = await sreUSD.balanceOf(users[1]);
+                expect(await MagicSavings.connect(signers.users[1]).claim()).to.be.not.reverted;
+                var sreUSAfter = await sreUSD.balanceOf(users[1]);
+                await expect(sreUSAfter).to.be.gt(sreUSDbefore);
+            });
+            it("User 1 should have 0 claimable sreUSD", async () => {
+                var claimable = await MagicSavings.claimable(users[1]);
+                await expect(claimable).to.be.equal(0);
+            });
+        });
+        describe("User 2 changes weights", () => {
+            let umt, msb, w, wb, wbs, ust, sw;
+            before(async function () {
+                umt = await MagicStaker.unclaimedMagicTokens(users[2]);
+                msb = await MagicStaker.balanceOf(users[2]);
+                w = await MagicStaker.accountStrategyWeight(users[2], 0);
+                wb = await MagicPounder.balanceOf(users[2]);
+                wbs = await MagicPounder.sharesOf(users[2]);
+                ust = await MagicSavings.claimable(users[2]);
+                sw = await MagicStaker.accountStrategyWeight(users[2], 1);
+            });
+            it("User 2 should be able to change weights", async () => {
+                expect(await MagicStaker.connect(signers.users[2]).setWeights([1000000, 9000000])).to.be.not.reverted;
+            });
+            it("Unclaimed magic tokens should drop to 0", async () => {
+                var umtn = await MagicStaker.unclaimedMagicTokens(users[2]);
+                await expect(umtn).to.be.equal(0);
+            });
+            it("Staker balance should increase by original unclaimed magic tokens", async () => {
+                var msbn = await MagicStaker.balanceOf(users[2]);
+                await expect(msbn).to.be.approximately(msb+umt,1);
+            });
+            it("New pounder balance should be 10% of the staker balance", async () => {
+                var wbn = await MagicPounder.balanceOf(users[2]);
+                var msbn = await MagicStaker.balanceOf(users[2]);
+                await expect(wbn).to.be.approximately(msbn*10n/100n,1);
+            });
+        });
     });
-
+    describe("Voting", () => {
+        let proposalCountBefore;
+        before(async function () {
+            proposalCountBefore = await voter.getProposalCount();
+        });
+        it("User 8 should be able to propose vote", async () => {
+            // createProposal(Voter.Action[] calldata payload, string calldata description)
+            expect(await MagicStaker.connect(signers.users[8]).createProposal([{target:MagicStakerAddress, data:"0x43676852"}], "test")).to.be.not.reverted;
+        });
+        it("Proposal count should increase by 1", async () => {
+            let proposalCountAfter = await voter.getProposalCount();
+            await expect(proposalCountAfter).to.be.equal(proposalCountBefore+1n);
+        });
+    });
 });
