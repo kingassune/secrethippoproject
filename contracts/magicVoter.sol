@@ -38,18 +38,13 @@ contract magicVoter is OperatorManager {
     Voter public voter = Voter(0x11111111063874cE8dC6232cb5C1C849359476E6);
     MagicStaker public magicStaker;
 
-    struct VoteTotals {
+    struct VoteData {
         uint256 yes;
         uint256 no;
     }
 
-    struct UserVote {
-        uint256 yes;
-        uint256 no;
-    }
-
-    mapping(address => mapping(uint256 => UserVote)) public votes; // user => proposalId => userVote
-    mapping(uint256 => VoteTotals) public voteTotals; // proposalId => VoteTotals
+    mapping(address => mapping(uint256 => VoteData)) public votes; // user => proposalId => userVote
+    mapping(uint256 => VoteData) public voteTotals; // proposalId => VoteData
     mapping(uint256 => bool) public executed; // proposalId => executed
 
     constructor(address _operator, address _manager) OperatorManager(_operator, _manager) {}
@@ -84,7 +79,7 @@ contract magicVoter is OperatorManager {
         uint256 votingPower = magicStaker.getVotingPower(msg.sender);
         require(votingPower > 0, "No voting power");
 
-        UserVote memory userVote = votes[msg.sender][id];
+        VoteData memory userVote = votes[msg.sender][id];
         require(userVote.yes + userVote.no == 0, "Already voted");
 
 
@@ -96,7 +91,7 @@ contract magicVoter is OperatorManager {
         userVote.no = weightNo;
         votes[msg.sender][id] = userVote;
 
-        VoteTotals memory totals = voteTotals[id];
+        VoteData storage totals = voteTotals[id];
         totals.yes += weightYes;
         totals.no += weightNo;
 
@@ -113,9 +108,9 @@ contract magicVoter is OperatorManager {
 
     function commitVote(uint256 id) external {
         (bool _canVote, uint32 _createdAt) = canVote(id);
-        require(!_canVote, "!ended");
+        require(_canVote, "!ended");
         require(_createdAt + EXECUTE_AFTER < block.timestamp, "!time");
-        VoteTotals storage totals = voteTotals[id];
+        VoteData storage totals = voteTotals[id];
         magicStaker.castVote(id, totals.yes, totals.no);
     }
 

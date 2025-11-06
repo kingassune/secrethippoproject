@@ -36,6 +36,7 @@ interface Strategy {
     function totalSupply() external view returns (uint256);
     function notifyReward(uint256 _amount) external;
     function desiredToken() external view returns(address);
+    function subtractFee(address _account, uint256 _fee) external;
 }
 
 interface Harvester {
@@ -61,7 +62,6 @@ contract magicStaker is OperatorManager {
     // ------------------------------------------------------------------------
     uint256 public constant DENOM = 10000000;
     uint256 public constant MAX_CALL_FEE = 50000;  // 0.5 %
-    uint256 public constant MAX_MAGIC_FEE = 10000; // 0.1 %
     uint256 public constant MAX_PCT = 10000;
     Staker public constant staker = Staker(0x22222222E9fE38F6f1FC8C61b25228adB4D8B953);
     IERC20 public constant rsup = IERC20(0x419905009e4656fdC02418C7Df35B1E61Ed5F726);
@@ -72,7 +72,6 @@ contract magicStaker is OperatorManager {
 
     // Fees
     uint256 public CALL_FEE = 5000;  // 0.05 %
-    uint256 public MAGIC_FEE = 2500; // 0.025 %
 
     // RSUP voting contract
     Voter public voter = Voter(0x11111111063874cE8dC6232cb5C1C849359476E6);
@@ -81,7 +80,7 @@ contract magicStaker is OperatorManager {
     IERC20[] public rewards;
     mapping(address => bool) public isRewardToken;
 
-    // totalSupply (includes magicUnclaimedSupply)
+    // totalSupply
     uint256 public totalSupply;
 
     mapping(address => uint256) public balanceOf;
@@ -92,7 +91,6 @@ contract magicStaker is OperatorManager {
     uint256 public pendingCooldownEpoch = type(uint256).max;
 
     // magic pounder (strategy 0) tracking
-    uint256 public magicUnclaimedSupply; // unclaimed pounder supply
     mapping(address => uint256) public magicBalanceOf; // user's claimed pounder balance
         // use unclaimedMagicTokens(address _account) for unclaimed user balance
 
@@ -183,15 +181,6 @@ contract magicStaker is OperatorManager {
         return strategies.length;
     }
 
-    function strategySupply(address _strategy) public view returns (uint256) {
-        uint256 supply = Strategy(_strategy).totalSupply();
-        // if magic strategy, include magic balance in supply
-        if (_strategy == strategies[0]) {
-            supply += magicUnclaimedSupply;
-        }
-        return supply;
-    }
-
     function strategyBalanceOf(address _strategy, address _account) public view returns (uint256) {
         return Strategy(_strategy).balanceOf(_account);
     }
@@ -200,7 +189,7 @@ contract magicStaker is OperatorManager {
         uint256 userMagic = magicBalanceOf[_account];
         uint256 currentMagicBalance = Strategy(strategies[0]).balanceOf(_account);
         if (currentMagicBalance > userMagic) {
-            uint256 diff = ((currentMagicBalance - userMagic) * (DENOM-MAGIC_FEE)) / DENOM;
+            uint256 diff = currentMagicBalance - userMagic;
             return diff;
         }
         return 0;
@@ -323,16 +312,13 @@ contract magicStaker is OperatorManager {
     function _syncMagicBalance(address _account) internal {
         // if user has unclaimed magic balance, adjust
         uint256 userMagic = magicBalanceOf[_account];
-        if (userMagic > 0) {
-            uint256 currentMagicBalance = Strategy(strategies[0]).balanceOf(_account);
-            if (currentMagicBalance > userMagic) {
-                uint256 diff = ((currentMagicBalance - userMagic) * (DENOM-MAGIC_FEE)) / DENOM;
-                if (diff > 0) {
-                    balanceOf[_account] += diff;
-                    magicUnclaimedSupply -= diff;
-                    magicBalanceOf[_account] = currentMagicBalance;
-                    emit MagicClaim(_account, diff);
-                }
+        uint256 currentMagicBalance = Strategy(strategies[0]).balanceOf(_account);
+        if (currentMagicBalance > userMagic) {
+            uint256 diff = (currentMagicBalance - userMagic);
+            if (diff > 0) {
+                balanceOf[_account] += diff;
+                magicBalanceOf[_account] = currentMagicBalance;
+                emit MagicClaim(_account, diff);
             }
         }
     }
@@ -493,7 +479,7 @@ contract magicStaker is OperatorManager {
         // distribute rewards to strategies based on their assigned balance
         for (uint256 i = 0; i < strategies.length; ++i) {
             address strategy = strategies[i];
-            uint256 stratSupply = strategySupply(strategy);
+            uint256 stratSupply = Strategy(strategy).totalSupply();
             if (stratSupply == 0) {
                 continue;
             }
@@ -519,7 +505,7 @@ contract magicStaker is OperatorManager {
         require(msg.sender == strategies[0], "!magic");
         rsup.safeTransferFrom(strategies[0], address(this), _amount);
         staker.stake(_amount);
-        magicUnclaimedSupply += _amount;
+        totalSupply += _amount;
         emit MagicStake(_amount);
     }
 
@@ -559,13 +545,6 @@ contract magicStaker is OperatorManager {
         require(_fee <= MAX_CALL_FEE, "!max");
         CALL_FEE = _fee;
         emit CallFeeSet(_fee);
-    }
-
-    // set magic fee
-    function setMagicFee(uint256 _fee) external onlyManager {
-        require(_fee <= MAX_MAGIC_FEE, "!max");
-        MAGIC_FEE = _fee;
-        emit MagicFeeSet(_fee);
     }
 
     // ------------------------------------------------------------------------

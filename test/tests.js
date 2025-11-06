@@ -200,22 +200,17 @@ describe("Setup", function () {
     });
 
     // Have test accounts create deposits
-    describe("Users 0-4, 8 deposits", () => {
+    describe("Users 0-7, 8 deposits", () => {
         
         // Set weights
         it("Should have users set weights", async () => {
-            for(var i=0; i<5; i++) {
-                var strat0w;
-                var strat1w;
-                if(i == 0) {
-                    strat0w = 2500000;
-                } else {
-                    strat0w = 5000000;
-                }
-                strat1w = 10000000 - strat0w;
+            expect(await MagicStaker.connect(signers.users[0]).setWeights([2500000, 7500000])).to.be.not.reverted;
+            for(var i=1; i<8; i++) {
+                var strat0w = 5000000;
+                var strat1w = 10000000 - strat0w;
                 expect(await MagicStaker.connect(signers.users[i]).setWeights([strat0w, strat1w])).to.be.not.reverted;
             }
-            expect(await MagicStaker.connect(signers.users[8]).setWeights([strat0w, strat1w])).to.be.not.reverted;
+            expect(await MagicStaker.connect(signers.users[8]).setWeights([6000000, 4000000])).to.be.not.reverted;
         });
 
         // Token approval
@@ -227,7 +222,7 @@ describe("Setup", function () {
 
         // Deposit
         it("Should have users stake/deposit", async () => {
-            for(var i=0; i<5; i++) {
+            for(var i=0; i<8; i++) {
                 expect(await MagicStaker.connect(signers.users[i]).stake(100000n*10n**18n)).to.be.not.reverted;
             }
             expect(await MagicStaker.connect(signers.users[8]).stake(1000000n*10n**18n)).to.be.not.reverted;
@@ -235,13 +230,18 @@ describe("Setup", function () {
 
         // Verify weights cannot be changed in same epoch
         it("Should not allow users to change weights in same epoch", async () => {
-            for(var i=0; i<5; i++) {
+            for(var i=0; i<9; i++) {
                 var strat0w = Math.floor(Math.random()*10000000);
                 var strat1w = 10000000 - strat0w;
-                expect(MagicStaker.connect(signers.users[i]).setWeights([strat0w, strat1w])).to.be.revertedWith("!epoch");
+                await expect(MagicStaker.connect(signers.users[i]).setWeights([strat0w, strat1w])).to.be.revertedWith("!epoch");
             }
         });
-
+        it("Total of strategy supplies should equal total staker supply", async () => {
+            var strat0sup = await MagicPounder.totalSupply();
+            var strat1sup = await MagicSavings.totalSupply();
+            var totalSup = await MagicStaker.totalSupply();
+            await expect(strat0sup + strat1sup).to.be.equal(totalSup);
+        });
     });
 
     // Cooldown and harvest/claim tests
@@ -266,20 +266,25 @@ describe("Setup", function () {
                 expect(await MagicStaker.connect(signers.users[i]).cooldown(100000n*10n**18n)).to.be.not.reverted;
             }
         });
-
+        it("Total of strategy supplies should equal total staker supply", async () => {
+            var strat0sup = await MagicPounder.totalSupply();
+            var strat1sup = await MagicSavings.totalSupply();
+            var totalSup = await MagicStaker.totalSupply();
+            await expect(strat0sup + strat1sup).to.be.equal(totalSup);
+        });
         // Harvest rewards
         it("Should harvest rewards", async () => {
             var earned = await staker.earned(MagicStakerAddress, reUSDAddress);
             //console.log(`Claiming ${(earned/10n**18n)} reUSD from staker`);
 
             var opBalBefore = await reUSD.balanceOf(operator);
-            var mPuSBefore = await MagicPounder.underlyingTotalSupply();
-            var mPtSBefore = await MagicPounder.totalSupply();
+            var mPuSBefore = await MagicPounder.totalSupply();
+            var mPtSBefore = await MagicPounder.sharesTotalSupply();
 
             expect(await MagicStaker.connect(signers.operator).harvest()).to.be.not.reverted;
 
-            var mPuSAfter = await MagicPounder.underlyingTotalSupply();
-            var mPtSAfter = await MagicPounder.totalSupply();
+            var mPuSAfter = await MagicPounder.totalSupply();
+            var mPtSAfter = await MagicPounder.sharesTotalSupply();
             var opBalAfter = await reUSD.balanceOf(operator);
 
             // Should increase compounder underlyingTotalSupply
@@ -301,10 +306,10 @@ describe("Setup", function () {
                     ust[i] = await MagicSavings.claimable(users[i]);
                     sw[i] = await MagicStaker.accountStrategyWeight(users[i], 1);
                 }
-                console.log(umt);
-                console.log(w);
-                console.log(ust);
-                console.log(sw);
+                //console.log(umt);
+                //console.log(w);
+                //console.log(ust);
+                //console.log(sw);
             });
 
             // Validate amounts
@@ -322,7 +327,12 @@ describe("Setup", function () {
                 await expect(umt[3]).to.be.equal(0);
                 await expect(umt[4]).to.be.equal(0);
             });
-
+            it("Total of strategy supplies should equal total staker supply", async () => {
+                var strat0sup = await MagicPounder.totalSupply();
+                var strat1sup = await MagicSavings.totalSupply();
+                var totalSup = await MagicStaker.totalSupply();
+                await expect(strat0sup + strat1sup).to.be.equal(totalSup);
+            });
         });
     });
     describe("Post-harvest tests", () => {
@@ -364,10 +374,27 @@ describe("Setup", function () {
                 var claimable = await MagicSavings.claimable(users[0]);
                 await expect(claimable).to.be.equal(0);
             });
+            it("Total of strategy supplies should equal total staker supply", async () => {
+                var strat0sup = await MagicPounder.totalSupply();
+                var strat1sup = await MagicSavings.totalSupply();
+                var totalSup = await MagicStaker.totalSupply();
+                var diff = strat0sup + strat1sup - totalSup;
+                //console.log("Difference in supplies: "+diff);
+                await expect(strat0sup + strat1sup).to.be.equal(totalSup);
+            });
         });
         describe("User 1 claims", () => {
+            let startTotalSupply, umt, startBal, s0sup, s1sup, s0bal, s1bal;
+            before(async function () {
+                startTotalSupply = await MagicStaker.totalSupply();
+                umt = await MagicStaker.unclaimedMagicTokens(users[1]);
+                startBal = await MagicStaker.balanceOf(users[1]);
+                s0sup = await MagicPounder.totalSupply();
+                s1sup = await MagicSavings.totalSupply();
+                s0bal = await MagicPounder.balanceOf(users[1]);
+                s1bal = await MagicSavings.balanceOf(users[1]);
+            });
             it("User 1 should claim RSUP", async () => {
-                var umt = await MagicStaker.unclaimedMagicTokens(users[1]);
                 expect(await MagicStaker.connect(signers.users[1]).syncAccount()).to.be.not.reverted;
             });
             it("User 1 should have no unclaimed magic tokens", async () => {
@@ -376,7 +403,7 @@ describe("Setup", function () {
             });
             it("User 1 should have an increased stake", async () => {
                 var stake = await MagicStaker.balanceOf(users[1]);
-                await expect(stake).to.be.gt(100000n*10n**18n);
+                await expect(startBal+umt).to.be.equal(stake);
             });
             it("User 1 should claim sreUSD", async () => {
                 var sreUSDbefore = await sreUSD.balanceOf(users[1]);
@@ -387,6 +414,29 @@ describe("Setup", function () {
             it("User 1 should have 0 claimable sreUSD", async () => {
                 var claimable = await MagicSavings.claimable(users[1]);
                 await expect(claimable).to.be.equal(0);
+            });
+            it("Total supply should not change", async () => {
+                var totalSup = await MagicStaker.totalSupply();
+                await expect(startTotalSupply).to.be.equal(totalSup);
+            });
+            it("Total of strategy supplies should equal total staker supply", async () => {
+                var strat0sup = await MagicPounder.totalSupply();
+                var strat1sup = await MagicSavings.totalSupply();
+                var afterBal = await MagicStaker.balanceOf(users[1]);
+                var as0bal = await MagicPounder.balanceOf(users[1]);
+                var as1bal = await MagicSavings.balanceOf(users[1]);
+                //console.log("User 1 stake before: "+startBal);
+                //console.log(" User 1 stake after: "+afterBal);
+                //console.log("User 1 s0 bal before: "+s0bal);
+                //console.log(" User 1 s0 bal after: "+as0bal);
+                //console.log("User 1 s1 bal before: "+s1bal);
+                //console.log(" User 1 s1 bal after: "+as1bal);
+                //console.log("Starting s0 supply: "+s0sup);
+                //console.log("  Ending s0 supply: "+strat0sup);
+                //console.log("Starting s1 supply: "+s1sup);
+                //console.log("  Ending s1 supply: "+strat1sup);
+                var totalSup = await MagicStaker.totalSupply();
+                await expect(strat0sup + strat1sup).to.be.equal(totalSup);
             });
         });
         describe("User 2 changes weights", () => {
@@ -416,6 +466,12 @@ describe("Setup", function () {
                 var msbn = await MagicStaker.balanceOf(users[2]);
                 await expect(wbn).to.be.approximately(msbn*10n/100n,1);
             });
+            it("Total of strategy supplies should equal total staker supply", async () => {
+                var strat0sup = await MagicPounder.totalSupply();
+                var strat1sup = await MagicSavings.totalSupply();
+                var totalSup = await MagicStaker.totalSupply();
+                await expect(strat0sup + strat1sup).to.be.equal(totalSup);
+            });
         });
     });
     describe("Voting", () => {
@@ -423,13 +479,65 @@ describe("Setup", function () {
         before(async function () {
             proposalCountBefore = await voter.getProposalCount();
         });
+        it("Should advance time 2 weeks", async () => {
+                await ethers.provider.send("evm_increaseTime", [14 * 24 * 60 * 60]);
+                await ethers.provider.send("evm_mine", []);
+        });
         it("User 8 should be able to propose vote", async () => {
             // createProposal(Voter.Action[] calldata payload, string calldata description)
             expect(await MagicStaker.connect(signers.users[8]).createProposal([{target:MagicStakerAddress, data:"0x43676852"}], "test")).to.be.not.reverted;
         });
-        it("Proposal count should increase by 1", async () => {
+        it("RSUP Proposal count should increase by 1", async () => {
             let proposalCountAfter = await voter.getProposalCount();
             await expect(proposalCountAfter).to.be.equal(proposalCountBefore+1n);
+        });
+        describe("Casting meta-votes", () => {
+            it("User 0 cannot vote due to cooldown", async () => {
+                await expect(MagicVoter.connect(signers.users[0]).vote(proposalCountBefore, 10000n, 0n)).to.be.revertedWith("No voting power");
+            });
+            it("User 1-2 can vote yes", async () => {
+                expect(await MagicVoter.connect(signers.users[1]).vote(proposalCountBefore, 10000n, 0n)).to.be.not.reverted;
+                expect(await MagicVoter.connect(signers.users[2]).vote(proposalCountBefore, 10000n, 0n)).to.be.not.reverted;
+            });
+            it("'Yes' total increases by getVotingPower() of users 1-2", async () => {
+                var user1power = await MagicStaker.getVotingPower(users[1]);
+                var user2power = await MagicStaker.getVotingPower(users[2]);
+                var voteTotals = await MagicVoter.voteTotals(proposalCountBefore);
+                await expect(voteTotals[0]).to.be.equal(user1power + user2power);
+            });
+            it("User 3-4 cannnot vote", async () => {
+                await expect(MagicVoter.connect(signers.users[3]).vote(proposalCountBefore, 10000n, 0n)).to.be.revertedWith("No voting power");
+                await expect(MagicVoter.connect(signers.users[4]).vote(proposalCountBefore, 10000n, 0n)).to.be.revertedWith("No voting power");
+            });
+            it("Should advance time 5 days", async () => {
+                await ethers.provider.send("evm_increaseTime", [5 * 24 * 60 * 60]);
+                await ethers.provider.send("evm_mine", []);
+            });
+            it("User 5 can vote no", async () => {
+                expect(await MagicVoter.connect(signers.users[5]).vote(proposalCountBefore, 0n, 10000n)).to.be.not.reverted;
+                //expect(await MagicVoter.connect(signers.users[6]).vote(proposalCountBefore, 0n, 10000n)).to.be.not.reverted;
+            });
+            it("'No' total increases by 5 voting power", async () => {
+                var user5power = await MagicStaker.getVotingPower(users[5]);
+                //var user6power = await MagicStaker.getVotingPower(users[6]);
+                var voteTotals = await MagicVoter.voteTotals(proposalCountBefore);
+                await expect(voteTotals[1]).to.be.equal(user5power);
+                //console.log(voteTotals);
+                var totalSupply = await MagicStaker.totalSupply();
+                var totalVoted = voteTotals[0] + voteTotals[1];
+                console.log("           Pct voted:    "+totalVoted*100n/totalSupply)
+            });
+            it("Should not allow non-local-quorum vote", async () => {
+                await expect(MagicVoter.connect(signers.operator).commitVote(proposalCountBefore)).to.be.revertedWith("!quorum");
+            });
+            it("Should cast vote automatically when User 6 votes Yes", async () => {
+                var voteBefore = await voter.accountVoteWeights(MagicStakerAddress, proposalCountBefore);
+                expect(await MagicVoter.connect(signers.users[6]).vote(proposalCountBefore, 10000n, 0n)).to.emit("VoteCast")
+                var voteAfter = await voter.accountVoteWeights(MagicStakerAddress, proposalCountBefore);
+                //console.log(voteBefore);
+                //console.log(voteAfter);
+            });
+            
         });
     });
 });

@@ -20,8 +20,8 @@ contract magicPounder is OperatorManager {
     using SafeERC20 for IERC20;
     address public constant desiredToken = 0x419905009e4656fdC02418C7Df35B1E61Ed5F726;
     address public magicStaker;
+    uint256 public sharesTotalSupply;
     uint256 public totalSupply;
-    uint256 public underlyingTotalSupply;
     // user shares - balanceOf is reserved for underlying balance for magicStaker interoperability
     mapping(address account => uint256) public sharesOf;
 
@@ -33,25 +33,25 @@ contract magicPounder is OperatorManager {
     }
 
     function balanceOf(address user) public view returns (uint256 amount) {
-        if(totalSupply == 0) {
+        if(sharesTotalSupply == 0) {
             return 0;
         }
-        return ((sharesOf[user] * underlyingTotalSupply) / totalSupply);
+        return ((sharesOf[user] * totalSupply) / sharesTotalSupply);
     }
     
     function underlyingToShares(uint256 _amount) public view returns (uint256) {
-        if(totalSupply == 0) {
+        if(sharesTotalSupply == 0) {
             return _amount;
         }
-        require(_amount * totalSupply >= underlyingTotalSupply, "!small");
-        return (_amount * totalSupply) / underlyingTotalSupply;
+        require(_amount * sharesTotalSupply >= totalSupply, "!small");
+        return (_amount * sharesTotalSupply) / totalSupply;
     }
 
     function setUserBalance(address _account, uint256 _balance) external onlyMagicStaker {
         uint256 userBalance = balanceOf(_account);
         if(_balance == 0) {
-            underlyingTotalSupply -= userBalance;
-            totalSupply -= sharesOf[_account];
+            totalSupply -= userBalance;
+            sharesTotalSupply -= sharesOf[_account];
             sharesOf[_account] = 0;
             return;
         }
@@ -59,16 +59,16 @@ contract magicPounder is OperatorManager {
             uint256 diff = userBalance - _balance;
             uint256 removeShares = underlyingToShares(diff);
             sharesOf[_account] -= removeShares;
-            totalSupply -= removeShares;
-            underlyingTotalSupply -= diff;
+            sharesTotalSupply -= removeShares;
+            totalSupply -= diff;
             return;
         }
         if(_balance > userBalance) {
             uint256 diff = _balance - userBalance;
             uint256 addShares = underlyingToShares(diff);
             sharesOf[_account] += addShares;
-            totalSupply += addShares;
-            underlyingTotalSupply += diff;
+            sharesTotalSupply += addShares;
+            totalSupply += diff;
             return;
         }
     }
@@ -76,7 +76,7 @@ contract magicPounder is OperatorManager {
     function notifyReward(uint256 _amount) external onlyMagicStaker {
         // magic stake RSUP
         MagicStaker(magicStaker).magicStake(_amount);
-        underlyingTotalSupply += _amount;
+        totalSupply += _amount;
     }
 
     // needs to be immutable since this contract handles balances
