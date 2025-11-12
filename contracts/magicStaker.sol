@@ -162,7 +162,6 @@ contract magicStaker is OperatorManager {
     event CallFeeSet(uint256 newFee);
     event MagicFeeSet(uint256 newFee);
     event StrategyAdded(address strategy);
-    event StrategyRemoved(address strategy);
     event MagicVoterSet(address voter);
     event ResupplyVoterSet(address voter);
     event DelegateApprovalSet(address delegate, bool isApproved);
