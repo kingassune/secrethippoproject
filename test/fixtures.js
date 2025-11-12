@@ -112,8 +112,7 @@ async function setUpSmartContracts() {
     const { MagicSavings } = await ignition.deploy(MagicSavingsModule, {
     parameters: {
         DeployMagicSavings: {
-        _magicStaker: magicStakerAddress,
-        _rewardToken: sreUSDAddress,
+        _magicStaker: magicStakerAddress
         },
     },
     });

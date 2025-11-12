@@ -22,6 +22,10 @@ pragma solidity ^0.8.30;
 import { IERC20, SafeERC20 } from '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
 import { OperatorManager } from "./operatorManager.sol";
 
+interface Registry {
+    function getAddress(string memory key) external view returns (address);
+}
+
 interface Staker {
     function stake(uint _amount) external returns (uint);
     function cooldown(address _account, uint _amount) external returns (uint);
@@ -40,7 +44,16 @@ interface Strategy {
 }
 
 interface Harvester {
+    struct Route {
+        address pool;
+        address tokenIn;
+        address tokenOut;
+        uint256 functionType;
+        uint256 indexIn;
+        uint256 indexOut;
+    }
     function process(address[10] memory _tokenIn, uint256[10] memory _amountsIn, address _strategy) external returns (uint256);
+    function getRoute(address _tokenIn, address _tokenOut) external view returns (Route[] memory);
 }
 
 interface Voter {
@@ -54,6 +67,10 @@ interface Voter {
     function minCreateProposalWeight() external view returns (uint256);
 }
 
+interface MagicVoter {
+    function setResupplyVoter(address _voter) external;
+}
+
 contract magicStaker is OperatorManager {
     using SafeERC20 for IERC20;
 
@@ -63,6 +80,7 @@ contract magicStaker is OperatorManager {
     uint256 public constant DENOM = 10000000;
     uint256 public constant MAX_CALL_FEE = 50000;  // 0.5 %
     uint256 public constant MAX_PCT = 10000;
+    Registry public constant registry = Registry(0x10101010E0C3171D894B71B3400668aF311e7D94);
     Staker public constant staker = Staker(0x22222222E9fE38F6f1FC8C61b25228adB4D8B953);
     IERC20 public constant rsup = IERC20(0x419905009e4656fdC02418C7Df35B1E61Ed5F726);
 
@@ -74,7 +92,7 @@ contract magicStaker is OperatorManager {
     uint256 public CALL_FEE = 5000;  // 0.05 %
 
     // RSUP voting contract
-    Voter public voter = Voter(0x11111111063874cE8dC6232cb5C1C849359476E6);
+    Voter public voter;
 
     // Rewards (only reUSD as of writing)
     IERC20[] public rewards;
@@ -100,7 +118,7 @@ contract magicStaker is OperatorManager {
     mapping(address => uint256) public accountWeightEpoch;
 
     // Harvester to handle token swaps
-    mapping(address => address) public strategyHarvester;
+    mapping(address strategy => address harvester) public strategyHarvester;
 
     // ------------------------------------------------------------------------
     // VOTING
@@ -124,6 +142,7 @@ contract magicStaker is OperatorManager {
         // add reusd to rewards
         rewards.push(IERC20(0x57aB1E0003F623289CD798B1824Be09a793e4Bec));
         isRewardToken[0x57aB1E0003F623289CD798B1824Be09a793e4Bec] = true;
+        voter = Voter(registry.getAddress("VOTER"));
     }
 
     // ------------------------------------------------------------------------
@@ -485,16 +504,23 @@ contract magicStaker is OperatorManager {
             }
             require(strategyHarvester[strategy] != address(0), "!harvester");
             uint256[10] memory stratShares;
-            for (uint256 r = 0; r < rewardBals.length; ++r) {
+            for (uint256 r = 0; r < rewards.length; ++r) {
                 if(positiveRewards[r] == address(0)) {
-                    break;
+                    continue;
+                }
+                if(i == strategies.length - 1) {
+                    // last strategy, assign all remaining shares to avoid rounding issues
+                    uint256 lastRewardBal = rewards[r].balanceOf(address(this));
+                    if(positiveRewards[r] == address(rsup)) {
+                        lastRewardBal -= rsupBal;
+                    }
+                    stratShares[r] = lastRewardBal;
+                    continue;
                 }
                 stratShares[r] = (rewardBals[r] * stratSupply) / totalSupply;
             }
             // process rewards for strategy
-            uint256 tokenOutBal = Harvester(strategyHarvester[strategy]).process(positiveRewards, stratShares, strategy);
-            // notify strategy of reward
-            Strategy(strategy).notifyReward(tokenOutBal);
+            Harvester(strategyHarvester[strategy]).process(positiveRewards, stratShares, strategy);
         }
     }
 
@@ -515,6 +541,8 @@ contract magicStaker is OperatorManager {
 
     // Add reward token
     function addRewardToken(address _rewardToken) external onlyManager {
+        require(_rewardToken != address(0), "!zeroAddress");
+        require(rewards.length < 10, "!maxRewards");
         require(!isRewardToken[_rewardToken], "!exists");
         isRewardToken[_rewardToken] = true;
         rewards.push(IERC20(_rewardToken));
@@ -531,15 +559,6 @@ contract magicStaker is OperatorManager {
         emit RemoveRewardToken(_rewardToken);
     }
 
-    // Set strategy harvester
-    function setStrategyHarvester(address _strategy, address _harvester) external onlyManager {
-        strategyHarvester[_strategy] = _harvester;
-        for(uint256 i = 0; i<rewards.length; ++i) {
-            rewards[i].approve(_harvester, type(uint256).max);
-        }
-        emit StrategyHarvesterSet(_strategy, _harvester);
-    }
-
     // set call fee
     function setCallFee(uint256 _fee) external onlyManager {
         require(_fee <= MAX_CALL_FEE, "!max");
@@ -550,6 +569,28 @@ contract magicStaker is OperatorManager {
     // ------------------------------------------------------------------------
     // Operator FUNCTIONS
     // ------------------------------------------------------------------------
+
+    // Set strategy harvester
+    function setStrategyHarvester(address _strategy, address _harvester, bool _keepOldApproval) external onlyOperator {
+        // validate harvester has route for strategy desired token
+        Harvester.Route[] memory routes = Harvester(_harvester).getRoute(address(rewards[0]), Strategy(_strategy).desiredToken());
+        require(routes.length > 0, "!route");
+        // since strategies can share harvester, make it a choice to revoke old permissions or not
+        // this way, changing harvester for 1 strategy doesn't break another
+        if(!_keepOldApproval) {
+            address oldHarvester = strategyHarvester[_strategy];
+            if(oldHarvester != address(0)) {
+                for(uint256 i = 0; i<rewards.length; ++i) {
+                    rewards[i].approve(oldHarvester, 0);
+                }
+            }
+        }
+        strategyHarvester[_strategy] = _harvester;
+        for(uint256 i = 0; i<rewards.length; ++i) {
+            rewards[i].approve(_harvester, type(uint256).max);
+        }
+        emit StrategyHarvesterSet(_strategy, _harvester);
+    }
 
     // Add strategy
     function addStrategy(address _strategy) external onlyOperator {
@@ -562,8 +603,6 @@ contract magicStaker is OperatorManager {
         // Verify strategy has a desiredToken and that it is not RSUP
         address dt = strategy.desiredToken();
         require(dt != address(0) && dt != address(rsup), "!desiredToken");
-
-        IERC20(dt).approve(_strategy, type(uint256).max);
 
         // Verify adding balance
         strategy.setUserBalance(address(1234), DENOM);
@@ -586,8 +625,10 @@ contract magicStaker is OperatorManager {
     }
 
     // Set Resupply voter contract
-    function setResupplyVoter(address _voter) external onlyOperator {
+    function setResupplyVoter() external onlyOperator {
+        address _voter = registry.getAddress("VOTER");
         voter = Voter(_voter);
+        MagicVoter(magicVoter).setResupplyVoter(_voter);
         emit ResupplyVoterSet(_voter);
     }
 
@@ -602,7 +643,8 @@ contract magicStaker is OperatorManager {
         address _to,
         uint256 _value,
         bytes calldata _data
-    ) external onlyOperator returns (bool, bytes memory) {
+    ) external returns (bool, bytes memory) {
+        require(msg.sender == RESUPPLY_CORE, "!auth");
         (bool success, bytes memory result) = _to.call{value: _value}(_data);
         emit Executed(_to, _value, _data, success);
         return (success, result);

@@ -33,7 +33,7 @@ interface MagicStaker {
 
 contract magicVoter is OperatorManager {
     uint256 public constant MAX_PCT = 10000;
-    uint256 public constant EXECUTE_AFTER = 4 days;
+    uint256 public executionDelay = 4 days;
 
     Voter public voter = Voter(0x11111111063874cE8dC6232cb5C1C849359476E6);
     MagicStaker public magicStaker;
@@ -96,7 +96,7 @@ contract magicVoter is OperatorManager {
         totals.no += weightNo;
 
         // if voting delay period over, cast vote automatically
-        if(_createdAt + EXECUTE_AFTER < block.timestamp) {
+        if(_createdAt + executionDelay < block.timestamp) {
             try magicStaker.castVote(id, totals.yes, totals.no) {
                 // Vote cast
                 executed[id] = true;
@@ -109,9 +109,10 @@ contract magicVoter is OperatorManager {
     function commitVote(uint256 id) external {
         (bool _canVote, uint32 _createdAt) = canVote(id);
         require(_canVote, "!ended");
-        require(_createdAt + EXECUTE_AFTER < block.timestamp, "!time");
+        require(_createdAt + executionDelay < block.timestamp, "!time");
         VoteData storage totals = voteTotals[id];
         magicStaker.castVote(id, totals.yes, totals.no);
+        executed[id] = true;
     }
 
     // doesn't need to be immutable since this contract does not handle balances
@@ -119,4 +120,15 @@ contract magicVoter is OperatorManager {
         magicStaker = MagicStaker(_magicStaker);
     }
 
+    function setExecutionDelay(uint256 _time) external onlyOperator {
+        uint256 votingPeriod = voter.votingPeriod();
+        require(_time < votingPeriod, "!tooLong");
+        require(_time > 60*60*24*2, "!tooShort");
+        executionDelay = _time;
+    }
+
+    function setResupplyVoter(address _voter) external {
+        require(msg.sender == address(magicStaker), "!auth");
+        voter = Voter(_voter);
+    }
 }

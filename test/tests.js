@@ -100,33 +100,7 @@ describe("Setup", function () {
     });
 
     // Configuration of contracts
-    describe("Initial Setup", () => {
-
-        // Connecting staker and components
-        it("Set MagicStaker in MagicPounder", async () => {
-            await MagicPounder.connect(signers.operator).setMagicStaker(MagicStakerAddress);
-            expect(await MagicPounder.magicStaker()).to.be.equal(MagicStakerAddress);
-        });
-        it("Set MagicStaker in MagicVoter", async () => {
-            await MagicVoter.connect(signers.operator).setMagicStaker(MagicStakerAddress);
-            expect(await MagicVoter.magicStaker()).to.be.equal(MagicStakerAddress);
-        });
-        it("Add MagicSavings strategy", async () => {
-            expect(await MagicStaker.connect(signers.operator).addStrategy(MagicSavingsAddress)).to.be.not.reverted;
-        });
-        
-        // Adding harvester
-        it("Set MagicHarvester as Strategy 0 and Strategy 1 Harvester in MagicStaker", async () => {
-            await MagicStaker.connect(signers.operator).setStrategyHarvester(MagicPounderAddress, MagicHarvesterAddress);
-            expect(await MagicStaker.strategyHarvester(MagicPounderAddress)).to.be.equal(MagicHarvesterAddress);
-            await MagicStaker.connect(signers.operator).setStrategyHarvester(MagicSavingsAddress, MagicHarvesterAddress);
-            expect(await MagicStaker.strategyHarvester(MagicSavingsAddress)).to.be.equal(MagicHarvesterAddress);
-        });
-
-        it("Set magicStaker as rewardCaller on Harvester", async () => {
-            expect(await MagicHarvester.connect(signers.operator).addRewardCaller(MagicStakerAddress)).to.be.not.reverted;
-        });
-
+    describe("Initial Setup - Harvester", () => {
         // Add harvester routes
         describe("Add reUSD->RSUP harvesting route", () => {
             it("Approve reUSD for MagicHarvester", async () => {
@@ -195,6 +169,38 @@ describe("Setup", function () {
                 var sreUSDBalAfter = await sreUSD.balanceOf(operator);
                 expect(sreUSDBalAfter).to.be.gt(sreUSDBalBefore);
             });
+        });
+    });
+    describe("Initial Setup", () => {
+
+        // Connecting staker and components
+        it("Set MagicStaker in MagicPounder", async () => {
+            await MagicPounder.connect(signers.operator).setMagicStaker(MagicStakerAddress);
+            expect(await MagicPounder.magicStaker()).to.be.equal(MagicStakerAddress);
+        });
+        it("Set MagicStaker in MagicVoter", async () => {
+            await MagicVoter.connect(signers.operator).setMagicStaker(MagicStakerAddress);
+            expect(await MagicVoter.magicStaker()).to.be.equal(MagicStakerAddress);
+        });
+        it("Add MagicSavings strategy", async () => {
+            expect(await MagicStaker.connect(signers.operator).addStrategy(MagicSavingsAddress)).to.be.not.reverted;
+        });
+
+        // Adding harvester
+        it("Set MagicHarvester as Strategy 0 and Strategy 1 Harvester in MagicStaker", async () => {
+            await MagicStaker.connect(signers.operator).setStrategyHarvester(MagicPounderAddress, MagicHarvesterAddress, true);
+            expect(await MagicStaker.strategyHarvester(MagicPounderAddress)).to.be.equal(MagicHarvesterAddress);
+            await MagicStaker.connect(signers.operator).setStrategyHarvester(MagicSavingsAddress, MagicHarvesterAddress, true);
+            expect(await MagicStaker.strategyHarvester(MagicSavingsAddress)).to.be.equal(MagicHarvesterAddress);
+        });
+
+        it("Set magicStaker as rewardCaller on Harvester", async () => {
+            expect(await MagicHarvester.connect(signers.operator).addRewardCaller(MagicStakerAddress)).to.be.not.reverted;
+        });
+
+        it("Approves desiredTokens for strategies", async () => {
+            await MagicHarvester.connect(signers.operator).approveStrategy(MagicPounderAddress, true);
+            await MagicHarvester.connect(signers.operator).approveStrategy(MagicSavingsAddress, true);
         });
 
     });

@@ -3,11 +3,15 @@ pragma solidity ^0.8.25;
 
 import { IERC20, SafeERC20 } from '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
 
+interface MagicStaker {
+    function strategyHarvester(address strategy) external returns (address);
+}
+
 contract magicSavings {
     using SafeERC20 for IERC20;
-    IERC20 public immutable rewardToken;
-    address public immutable magicStaker;
+    IERC20 public constant rewardToken = IERC20(0x557AB1e003951A73c12D16F0fEA8490E39C33C35);
     address public constant desiredToken = 0x557AB1e003951A73c12D16F0fEA8490E39C33C35;
+    address public immutable magicStaker;
 
     mapping(address => uint256) public balanceOf;
     uint256 public totalSupply;
@@ -17,9 +21,9 @@ contract magicSavings {
     mapping(address => uint256) private rewardIndexOf;
     mapping(address => uint256) private earned;
 
-    constructor(address _magicStaker, address _rewardToken) {
+    constructor(address _magicStaker) {
+        require(_magicStaker != address(0), "!zeroAddress");
         magicStaker = _magicStaker;
-        rewardToken = IERC20(_rewardToken);
     }
 
     modifier onlyMagicStaker {
@@ -27,11 +31,14 @@ contract magicSavings {
         _;
     }
 
-    function notifyReward(uint256 _amount) external onlyMagicStaker {
+    function notifyReward(uint256 _amount) external {
+        require(msg.sender == MagicStaker(magicStaker).strategyHarvester(address(this)));
+        rewardToken.safeTransferFrom(msg.sender, address(this), _amount);
         rewardIndex += (_amount * MULTIPLIER) / totalSupply;
     }
 
     function setUserBalance(address _account, uint256 _balance) external onlyMagicStaker {
+        require(_account != address(0), "!account");
         _updateRewards(_account);
 
         uint256 userBalance = balanceOf[_account];

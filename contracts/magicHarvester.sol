@@ -41,6 +41,7 @@ interface SreUSD {
 
 interface Strategy {
     function desiredToken() external view returns (address);
+    function notifyReward(uint256 _amount) external;
 }
 
 contract magicHarvester is OperatorManager {
@@ -64,6 +65,7 @@ contract magicHarvester is OperatorManager {
     event RemoveRewardCaller(address indexed caller);
     event SetRoute(address indexed tokenIn, address indexed tokenOut, uint256 routeLength);
     event Processed(address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut);
+    event StrategyApproval(address indexed token, address indexed strategy, bool approved);
 
     function addRewardCaller(address _caller) external onlyManager {
         rewardCaller[_caller] = true;
@@ -78,13 +80,19 @@ contract magicHarvester is OperatorManager {
         return routes[_tokenIn][_tokenOut];
     }
 
+    function approveStrategy(address _strategy, bool _approve) external onlyOperator {
+        address strategyToken = Strategy(_strategy).desiredToken();
+        IERC20(strategyToken).approve(_strategy, _approve ? type(uint256).max : 0);
+        emit StrategyApproval(strategyToken, _strategy, _approve);
+    }
+
     function setRoute(
         address _tokenIn,
         Route[] memory _routes,
         address _tokenOut,
         uint256 _testAmount,
         bool _removeApprovals
-    ) external  {
+    ) external onlyOperator {
         // can pass 0 routes to delete existing route, otherwise needs validation and test
         if(_routes.length > 0) {
             require(_routes[0].tokenIn == _tokenIn, "!start");
@@ -122,7 +130,8 @@ contract magicHarvester is OperatorManager {
 
     function process(address[10] memory _tokensIn, uint256[10] memory _amountsIn, address _strategy) external returns (uint256 tokenOutBal) {
         require(rewardCaller[msg.sender], "!auth");
-        address strategyToken = Strategy(_strategy).desiredToken();
+        Strategy strategy = Strategy(_strategy);
+        address strategyToken = strategy.desiredToken();
         require(strategyToken != address(0), "!tokenOut");
         for (uint256 i = 0; i < _tokensIn.length; i++) {
             if(_tokensIn[i] == address(0)) {
@@ -134,7 +143,7 @@ contract magicHarvester is OperatorManager {
         // notify strategy of reward
         tokenOutBal = IERC20(strategyToken).balanceOf(address(this));
         require(tokenOutBal > 0, "!reward");
-        IERC20(strategyToken).safeTransfer(_strategy, tokenOutBal);
+        strategy.notifyReward(tokenOutBal);
     }
 
     function _process(address _tokenIn, address _tokenOut, uint256 _amountIn) internal {
@@ -150,7 +159,6 @@ contract magicHarvester is OperatorManager {
                 CurvePool(route.pool).exchange{value: 0}(int128(int256(route.indexIn)), int128(int256(route.indexOut)), bal, 0);
             } else if (route.functionType == 1) {
                 // scrvUSD redeem
-                IERC20(route.tokenIn).approve(route.pool, bal);
                 ScrvUSD(route.pool).redeem(bal, address(this), address(this));
             } else if (route.functionType == 2) {
                 // alt curve exchange

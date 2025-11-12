@@ -52,9 +52,8 @@ const MagicHarvesterModule = buildModule("DeployMagicHarvester", (m) => {
 const MagicSavingsModule = buildModule("DeployMagicSavings", (m) => {
 
     const magicStaker = m.getParameter("_magicStaker", "0x0000000000000000000000000000000000000000");
-    const rewardToken = m.getParameter("_rewardToken", "0x0000000000000000000000000000000000000000");
 
-    const MagicSavings = m.contract("magicSavings", [magicStaker, rewardToken]);
+    const MagicSavings = m.contract("magicSavings", [magicStaker]);
 
     return { MagicSavings };
 });

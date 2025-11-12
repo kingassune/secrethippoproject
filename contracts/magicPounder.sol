@@ -14,6 +14,7 @@ import { OperatorManager } from "./operatorManager.sol";
 
 interface MagicStaker {
     function magicStake(uint256 _amount) external;
+    function strategyHarvester(address strategy) external returns (address);
 }
 
 contract magicPounder is OperatorManager {
@@ -48,6 +49,7 @@ contract magicPounder is OperatorManager {
     }
 
     function setUserBalance(address _account, uint256 _balance) external onlyMagicStaker {
+        require(_account != address(0), "!account");
         uint256 userBalance = balanceOf(_account);
         if(_balance == 0) {
             totalSupply -= userBalance;
@@ -73,7 +75,9 @@ contract magicPounder is OperatorManager {
         }
     }
 
-    function notifyReward(uint256 _amount) external onlyMagicStaker {
+    function notifyReward(uint256 _amount) external {
+        require(msg.sender == MagicStaker(magicStaker).strategyHarvester(address(this)));
+        IERC20(desiredToken).safeTransferFrom(msg.sender, address(this), _amount);
         // magic stake RSUP
         MagicStaker(magicStaker).magicStake(_amount);
         totalSupply += _amount;
@@ -81,6 +85,7 @@ contract magicPounder is OperatorManager {
 
     // needs to be immutable since this contract handles balances
     function setMagicStaker(address _magicStaker) external onlyOperator {
+        require(magicStaker == address(0), "!immutable");
         require(_magicStaker != address(0), "!zero");
         magicStaker = _magicStaker;
         IERC20(desiredToken).approve(magicStaker, type(uint256).max);
