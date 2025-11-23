@@ -210,13 +210,13 @@ describe("Setup", function () {
         
         // Set weights
         it("Should have users set weights", async () => {
-            expect(await MagicStaker.connect(signers.users[0]).setWeights([2500000, 7500000])).to.be.not.reverted;
+            expect(await MagicStaker.connect(signers.users[0]).setWeights([2500, 7500])).to.be.not.reverted;
             for(var i=1; i<8; i++) {
-                var strat0w = 5000000;
-                var strat1w = 10000000 - strat0w;
+                var strat0w = 5000;
+                var strat1w = 10000 - strat0w;
                 expect(await MagicStaker.connect(signers.users[i]).setWeights([strat0w, strat1w])).to.be.not.reverted;
             }
-            expect(await MagicStaker.connect(signers.users[8]).setWeights([6000000, 4000000])).to.be.not.reverted;
+            expect(await MagicStaker.connect(signers.users[8]).setWeights([6000, 4000])).to.be.not.reverted;
         });
 
         // Token approval
@@ -232,13 +232,15 @@ describe("Setup", function () {
                 expect(await MagicStaker.connect(signers.users[i]).stake(100000n*10n**18n)).to.be.not.reverted;
             }
             expect(await MagicStaker.connect(signers.users[8]).stake(1000000n*10n**18n)).to.be.not.reverted;
+            var accountData = await MagicStaker.accountStakeData(users[3]);
+            //console.log("User 3 stake data:", accountData);
         });
 
         // Verify weights cannot be changed in same epoch
         it("Should not allow users to change weights in same epoch", async () => {
             for(var i=0; i<9; i++) {
-                var strat0w = Math.floor(Math.random()*10000000);
-                var strat1w = 10000000 - strat0w;
+                var strat0w = Math.floor(Math.random()*10000);
+                var strat1w = 10000 - strat0w;
                 await expect(MagicStaker.connect(signers.users[i]).setWeights([strat0w, strat1w])).to.be.revertedWith("!epoch");
             }
         });
@@ -264,18 +266,34 @@ describe("Setup", function () {
                 c++;
             }
             console.log("     > advanced "+c+" weeks to reach cooldown epoch");
+            var accountData = await MagicStaker.accountStakeData(users[3]);
+            //console.log("User 3 stake data:", accountData);
+            await MagicStaker.connect(signers.users[3]).checkpointAccount(users[3]);
+            accountData = await MagicStaker.accountStakeData(users[3]);
+            //console.log("User 3 stake data:", accountData);
         });
 
         // Have some users enter cooldown before reward harvest
         it("Should have users 3 and 4 enter cooldown", async () => {
+            var strat0sup = await MagicPounder.totalSupply();
+            var strat1sup = await MagicSavings.totalSupply();
+            var totalSup = await MagicStaker.totalSupply();
+            //console.log(`     > Pre-cooldown supplies:   Staker: ${(totalSup/10n**18n)}   Pounder: ${(strat0sup/10n**18n)}   Savings: ${(strat1sup/10n**18n)}`);
             for(var i=3; i<5; i++) {
-                expect(await MagicStaker.connect(signers.users[i]).cooldown(100000n*10n**18n)).to.be.not.reverted;
+                var balBefore = await MagicStaker.balanceOf(users[i]);
+                //console.log(`     > User ${i} stake before cooldown: ${(balBefore/10n**18n)}`);
+                await expect(MagicStaker.connect(signers.users[i]).cooldown(100000n*10n**18n)).to.be.not.reverted;
             }
         });
         it("Total of strategy supplies should equal total staker supply", async () => {
             var strat0sup = await MagicPounder.totalSupply();
             var strat1sup = await MagicSavings.totalSupply();
             var totalSup = await MagicStaker.totalSupply();
+            //console.log(`     > Post-cooldown supplies:  Staker: ${(totalSup/10n**18n)}   Pounder: ${(strat0sup/10n**18n)}   Savings: ${(strat1sup/10n**18n)}`);
+            var balAfter = await MagicStaker.balanceOf(users[3]);
+            //console.log(`     > User 3 stake after cooldown: ${(balAfter/10n**18n)}`);
+            balAfter = await MagicStaker.balanceOf(users[4]);
+            //console.log(`     > User 4 stake after cooldown: ${(balAfter/10n**18n)}`);
             await expect(strat0sup + strat1sup).to.be.equal(totalSup);
         });
         // Harvest rewards
@@ -344,27 +362,29 @@ describe("Setup", function () {
     describe("Post-harvest tests", () => {
         // Verify compounding claim can be instantly entered into cooldown, but nothing more
         describe("Claim + cooldown in same step", async () => {
-            it("Should allow user 0 to cooldown including unclaimed amount, but not more", async () => {
-                var umt = await MagicStaker.unclaimedMagicTokens(users[0]);
-                await expect(MagicStaker.connect(signers.users[0]).cooldown(100000n*10n**18n + umt + 1n)).to.be.revertedWith("!balance");
-                expect(await MagicStaker.connect(signers.users[0]).cooldown(100000n*10n**18n + umt)).to.be.not.reverted;
+            let umt;
+            before(async function () {
+                umt = await MagicStaker.unclaimedMagicTokens(users[0]);
+            });
+            it("Should allow user 0 to cooldown only realized stake, not new claim", async () => {
+                await expect(MagicStaker.connect(signers.users[0]).cooldown(100000n*10n**18n + umt)).to.be.revertedWithCustomError(MagicStaker, "InsufficientRealizedStake");
+                await expect(MagicStaker.connect(signers.users[0]).cooldown(100000n*10n**18n + 1n)).to.be.revertedWithCustomError(MagicStaker, "InsufficientRealizedStake");
+                await expect(MagicStaker.connect(signers.users[0]).cooldown(100000n*10n**18n)).to.be.not.reverted;
             });
             it("User 0 should now have zero unclaimed RSUP", async () => {
-                var umt = await MagicStaker.unclaimedMagicTokens(users[0]);
-                await expect(umt).to.be.equal(0);
+                await expect(await MagicStaker.unclaimedMagicTokens(users[0])).to.be.equal(0);
             });
             it("User 0 should have reduced stake by cooldown amount", async () => {
                 var stake = await MagicStaker.balanceOf(users[0]);
-                await expect(stake).to.be.equal(0);
+                await expect(stake).to.be.equal(umt);
             });
-            it("User 0 should have 0 strategy balances", async () => {
+            it("User 0 strategy balances should match original unclaimed amount", async () => {
                 var strat0bal = await MagicPounder.balanceOf(users[0]);
                 var strat1bal = await MagicSavings.balanceOf(users[0]);
-                await expect(strat0bal).to.be.equal(0);
-                await expect(strat1bal).to.be.equal(0);
+                await expect(strat0bal+strat1bal).to.be.approximately(umt, 1n);
             });
             it("User 0 should not be able to cooldown again", async () => {
-                await expect(MagicStaker.connect(signers.users[0]).cooldown(1n)).to.be.revertedWith("!balance");
+                await expect(MagicStaker.connect(signers.users[0]).cooldown(1n)).to.be.revertedWithCustomError(MagicStaker, "InsufficientRealizedStake");
             });
             it("User 0 should still have sreUSD to claim", async () => {
                 var claimable = await MagicSavings.claimable(users[0]);
@@ -457,7 +477,7 @@ describe("Setup", function () {
                 sw = await MagicStaker.accountStrategyWeight(users[2], 1);
             });
             it("User 2 should be able to change weights", async () => {
-                expect(await MagicStaker.connect(signers.users[2]).setWeights([1000000, 9000000])).to.be.not.reverted;
+                expect(await MagicStaker.connect(signers.users[2]).setWeights([1000, 9000])).to.be.not.reverted;
             });
             it("Unclaimed magic tokens should drop to 0", async () => {
                 var umtn = await MagicStaker.unclaimedMagicTokens(users[2]);
@@ -498,9 +518,6 @@ describe("Setup", function () {
             await expect(proposalCountAfter).to.be.equal(proposalCountBefore+1n);
         });
         describe("Casting meta-votes", () => {
-            it("User 0 cannot vote due to cooldown", async () => {
-                await expect(MagicVoter.connect(signers.users[0]).vote(proposalCountBefore, 10000n, 0n)).to.be.revertedWith("No voting power");
-            });
             it("User 1-2 can vote yes", async () => {
                 expect(await MagicVoter.connect(signers.users[1]).vote(proposalCountBefore, 10000n, 0n)).to.be.not.reverted;
                 expect(await MagicVoter.connect(signers.users[2]).vote(proposalCountBefore, 10000n, 0n)).to.be.not.reverted;

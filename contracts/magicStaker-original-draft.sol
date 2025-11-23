@@ -1,88 +1,158 @@
 // SPDX-License-Identifier: Open Source
 
 /*
-
-    Multi-strategy staking contract for Resupply (RSUP) token with integrated voting power.
-
+    This is not audited. 
+    This is not tested very well.
     You should personally audit and test this code before using it.
 
-    Requires local quorum of 20% to cast a meta-vote to Resupply.
+    Voting power is not 1:1 with Resupply. 
+    It can drop below if other users dilute with small amounts. 
+    Or can rise above if other users are delayed after a large deposit.
+    Will probably mostly be above 1:1 from non-voters contributing to overall score.
 
+    Requires local quorum of 20% of total supply to forward vote to Resupply.
+
+    significantly increasing your deposit incurs a 1 epoch delay before voting.
+    This is to save on gas and not track account checkpoints, while maintaining a level 
+    of safety and regard towards Resupply governance alignment
 */
 
 pragma solidity ^0.8.30;
 
 import { IERC20, SafeERC20 } from '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
 import { OperatorManager } from "./operatorManager.sol";
-import { Registry, Staker, Strategy, Harvester, Voter, MagicVoter } from "./ifaces.sol";
 
-contract magicStaker is OperatorManager {
+interface Registry {
+    function getAddress(string memory key) external view returns (address);
+}
+
+interface Staker {
+    function stake(uint _amount) external returns (uint);
+    function cooldown(address _account, uint _amount) external returns (uint);
+    function unstake(address _account, address _receiver) external returns (uint);
+    function getReward(address _account) external;
+    function cooldownEpochs() external view returns (uint);
+}
+
+interface Strategy {
+    function setUserBalance(address _account, uint256 _balance) external;
+    function balanceOf(address _account) external view returns (uint256);
+    function totalSupply() external view returns (uint256);
+    function notifyReward(uint256 _amount) external;
+    function desiredToken() external view returns(address);
+    function subtractFee(address _account, uint256 _fee) external;
+}
+
+interface Harvester {
+    struct Route {
+        address pool;
+        address tokenIn;
+        address tokenOut;
+        uint256 functionType;
+        uint256 indexIn;
+        uint256 indexOut;
+    }
+    function process(address[10] memory _tokenIn, uint256[10] memory _amountsIn, address _strategy) external returns (uint256);
+    function getRoute(address _tokenIn, address _tokenOut) external view returns (Route[] memory);
+}
+
+interface Voter {
+    struct Action {
+        address target;
+        bytes data;
+    }
+    function voteForProposal(address account, uint256 id, uint256 pctYes, uint256 pctNo) external;
+    function createNewProposal(address account, Action[] calldata payload, string calldata description) external returns (uint256);
+    function setDelegateApproval(address _delegate, bool _isApproved) external;
+    function minCreateProposalWeight() external view returns (uint256);
+}
+
+interface MagicVoter {
+    function setResupplyVoter(address _voter) external;
+}
+
+contract magicStakerOld is OperatorManager {
     using SafeERC20 for IERC20;
 
     // ------------------------------------------------------------------------
-    // STRUCTS
+    // CONSTANTS
     // ------------------------------------------------------------------------
-    struct AccountStakeData {
-        uint112 realizedStake; // Amount of stake that has fully realized weight.
-        uint112 pendingStake; // Amount of stake that has not yet fully realized weight.
-        uint112 magicStake; // Amount of synced stake in magic pounder.
-        uint16 lastUpdateEpoch;
-    }
-
-    struct AccountWeightData {
-        uint112[] weights; // Strategy weights
-        uint16 lastUpdateEpoch; // last change
-    }
-
-    struct CooldownData {
-        uint256 amount;
-        uint256 maturityEpoch;
-    }
+    uint256 public constant DENOM = 10000000;
+    uint256 public constant MAX_CALL_FEE = 50000;  // 0.5 %
+    uint256 public constant MAX_PCT = 10000;
+    Registry public constant registry = Registry(0x10101010E0C3171D894B71B3400668aF311e7D94);
+    Staker public constant staker = Staker(0x22222222E9fE38F6f1FC8C61b25228adB4D8B953);
+    IERC20 public constant rsup = IERC20(0x419905009e4656fdC02418C7Df35B1E61Ed5F726);
 
     // ------------------------------------------------------------------------
     // VARIABLES
     // ------------------------------------------------------------------------
 
-    // Constants
-    uint256 public constant DENOM = 10000;
-    uint256 public constant MAX_CALL_FEE = 100;  // 1 %
-    Registry public constant REGISTRY = Registry(0x10101010E0C3171D894B71B3400668aF311e7D94);
-    Staker public constant STAKER = Staker(0x22222222E9fE38F6f1FC8C61b25228adB4D8B953);
-    IERC20 public constant RSUP = IERC20(0x419905009e4656fdC02418C7Df35B1E61Ed5F726);
+    // Fees
+    uint256 public CALL_FEE = 5000;  // 0.05 %
 
-    // Interfaced Contracts
-    IERC20[] public rewards; // native reward tokens from staker
-    Voter public voter; // Native RSUP voting contract, set from Resupply registry
+    // RSUP voting contract
+    Voter public voter;
 
-    // System
-    address public magicVoter; // meta-voting contract
-    uint256 public totalSupply; // total staked RSUP not in cooldown
-    uint256 public CALL_FEE = 5000;  // 0.05 % harvest caller incentive
-    address[] public strategies;
-    uint256 public pendingCooldownEpoch = type(uint256).max; // global tracking, max when no pending cooldowns
-
+    // Rewards (only reUSD as of writing)
+    IERC20[] public rewards;
     mapping(address => bool) public isRewardToken;
-    mapping(address strategy => address harvester) public strategyHarvester;   
 
-    // User account data
-    mapping(address => AccountStakeData) public accountStakeData;
-    mapping(address => CooldownData) public accountCooldownData;
-    mapping(address => AccountWeightData) public accountWeightData;
+    // totalSupply
+    uint256 public totalSupply;
 
-    // Vote power/supply tracking
-    mapping(uint epoch => uint weight) private totalPowerAt;
-    mapping(address account => mapping(uint epoch => uint weight)) private accountPowerAt;
-    uint112 public totalPending;
-    uint16 public totalLastUpdateEpoch;
+    mapping(address => uint256) public balanceOf;
+
+    // cooldown tracking
+    mapping(address => uint256) public cooldownOf;
+    mapping(address => uint256) public accountCooldownEpoch;
+    uint256 public pendingCooldownEpoch = type(uint256).max;
+
+    // magic pounder (strategy 0) tracking
+    mapping(address => uint256) public magicBalanceOf; // user's claimed pounder balance
+        // use unclaimedMagicTokens(address _account) for unclaimed user balance
+
+    // strategy indexing & account weights
+    address[] public strategies;
+    mapping(address => mapping(uint256 => uint256)) public accountStrategyWeight;
+    mapping(address => uint256) public accountWeightEpoch;
+
+    // Harvester to handle token swaps
+    mapping(address strategy => address harvester) public strategyHarvester;
+
+    // ------------------------------------------------------------------------
+    // VOTING
+    // ------------------------------------------------------------------------
+    mapping(address => uint256) public accountVoteEpoch;
+    address public magicVoter;
+
+
+    // ------------------------------------------------------------------------
+    // CONSTRUCTOR
+    // ------------------------------------------------------------------------
+    constructor(address _magicPounder, address _magicVoter, address _operator, address _manager) OperatorManager(_operator, _manager) {
+        // pre-approve staker
+        rsup.approve(address(staker), type(uint256).max);
+
+        magicVoter = _magicVoter;
+
+        // strategy 0 is immutable magic compounder
+        strategies.push(_magicPounder);
+
+        // add reusd to rewards
+        rewards.push(IERC20(0x57aB1E0003F623289CD798B1824Be09a793e4Bec));
+        isRewardToken[0x57aB1E0003F623289CD798B1824Be09a793e4Bec] = true;
+        voter = Voter(registry.getAddress("VOTER"));
+    }
 
     // ------------------------------------------------------------------------
     // EVENTS
     // ------------------------------------------------------------------------
-    event Stake(address indexed user, uint256 epoch, uint256 amount);
+    event Stake(address indexed user, uint256 amount);
     event Cooldown(address indexed user, uint256 amount);
     event Unstake(address indexed user, uint256 amount);
     event Harvest(address indexed reward, uint256 amount);
-    event SetWeights(address indexed user, uint112[] weights);
+    event SetWeights(address indexed user, uint256[] weights);
     event MagicClaim(address indexed user, uint256 amount);
     event VoteCast(uint256 proposalId, uint256 weightYes, uint256 weightNo);
     event MagicStake(uint256 amount);
@@ -98,41 +168,9 @@ contract magicStaker is OperatorManager {
     event Executed(address to, uint256 value, bytes data, bool success);
 
     // ------------------------------------------------------------------------
-    // ERRORS
-    // ------------------------------------------------------------------------
-
-    error OldEpoch();
-    error InvalidAmount();
-    error InsufficientRealizedStake();
-    
-
-    // ------------------------------------------------------------------------
-    // CONSTRUCTOR
-    // ------------------------------------------------------------------------
-    constructor(address _magicPounder, address _magicVoter, address _operator, address _manager) OperatorManager(_operator, _manager) {
-        // pre-approve staker
-        RSUP.approve(address(STAKER), type(uint256).max);
-
-        magicVoter = _magicVoter;
-
-        // strategy 0 is immutable magic compounder
-        strategies.push(_magicPounder);
-
-        // add reusd to rewards
-        rewards.push(IERC20(0x57aB1E0003F623289CD798B1824Be09a793e4Bec));
-        isRewardToken[0x57aB1E0003F623289CD798B1824Be09a793e4Bec] = true;
-        voter = Voter(REGISTRY.getAddress("VOTER"));
-    }
-
-
-    // ------------------------------------------------------------------------
     // VIEWs
     // ------------------------------------------------------------------------
     
-    function balanceOf(address _account) public view returns (uint256) {
-        return accountStakeData[_account].realizedStake + accountStakeData[_account].pendingStake;
-    }
-
     function rewardsLength() public view returns (uint256) {
         return rewards.length;
     }
@@ -145,7 +183,7 @@ contract magicStaker is OperatorManager {
     }
 
     function isCooldownEpoch() public view returns (bool) {
-        uint256 cde = STAKER.cooldownEpochs();
+        uint256 cde = staker.cooldownEpochs();
         uint256 epoch = getEpoch();
         if(epoch % (cde + 1) == 0) {
             return true;
@@ -154,6 +192,9 @@ contract magicStaker is OperatorManager {
         }
     }
 
+    /**
+     * @notice Active strategies only. Possible for order to change after index 0
+     */
     function strategiesLength() public view returns (uint256) {
         return strategies.length;
     }
@@ -163,50 +204,27 @@ contract magicStaker is OperatorManager {
     }
 
     function unclaimedMagicTokens(address _account) public view returns (uint256) {
-        AccountStakeData memory accountData = accountStakeData[_account];
+        uint256 userMagic = magicBalanceOf[_account];
         uint256 currentMagicBalance = Strategy(strategies[0]).balanceOf(_account);
-        if (currentMagicBalance > accountData.magicStake) {
-            uint256 diff = currentMagicBalance - accountData.magicStake;
+        if (currentMagicBalance > userMagic) {
+            uint256 diff = currentMagicBalance - userMagic;
             return diff;
         }
         return 0;
     }
 
-    function accountStrategyWeight(address _account, uint256 _strategyIndex) public view returns (uint112) {
-        AccountWeightData memory weightData = accountWeightData[_account];
-        require(_strategyIndex < weightData.weights.length, "!index");
-        return weightData.weights[_strategyIndex];
-    }
-
-
     // ------------------------------------------------------------------------
     // VOTING
     // ------------------------------------------------------------------------
     /**
-        @notice View function to get the current power for an account
-    */
-    function getVotingPower(address account) public view returns (uint) {
-        return getVotingPowerAt(account, getEpoch());
-    }
-
-    /**
-        @notice Get the power for an account in a given epoch
-    */
-    function getVotingPowerAt(address _account, uint _epoch) public view returns (uint) {
-        if (_epoch > getEpoch()) return 0;
-
-        AccountStakeData memory acctData = accountStakeData[_account];
-
-        uint16 lastUpdateEpoch = acctData.lastUpdateEpoch;
-
-        if (lastUpdateEpoch >= _epoch) return accountPowerAt[_account][_epoch];
-
-        uint weight = accountPowerAt[_account][lastUpdateEpoch];
-
-        uint pending = uint(acctData.pendingStake);
-        if (pending == 0) return weight;
-
-        return pending + weight;
+     * @notice Meta voting power of user
+     * @dev Will appear as 0 if user is delayed for safety
+     */
+    function getVotingPower(address _account) public view returns (uint256) {
+        if (accountVoteEpoch[_account] > getEpoch()) {
+            return 0;
+        }
+        return balanceOf[_account]+unclaimedMagicTokens(_account);
     }
 
     function createProposal(Voter.Action[] calldata payload, string calldata description) external returns (uint256) {
@@ -218,133 +236,11 @@ contract magicStaker is OperatorManager {
     function castVote(uint256 id, uint256 totalYes, uint256 totalNo) external {
         require(msg.sender == magicVoter, "!voter");
         uint256 total = totalYes + totalNo;
-        require((totalSupply * 2000) / DENOM < total, "!quorum"); // at least 20% of total supply must vote
-        uint256 weightYes = (totalYes * DENOM) / total;
-        uint256 weightNo = DENOM - weightYes;
+        require((totalSupply * 2000) / MAX_PCT < total, "!quorum"); // at least 20% of total supply must vote
+        uint256 weightYes = (totalYes * MAX_PCT) / total;
+        uint256 weightNo = MAX_PCT - weightYes;
         voter.voteForProposal(address(this), id, weightYes, weightNo);
         emit VoteCast(id, weightYes, weightNo);
-    }
-
-    /**
-        @notice Get the current realized weight for an account
-        @param _account Account to checkpoint.
-        @return acctData Most recent account data written to storage.
-        @return weight Most current account weight.
-        @dev Prefer to use this function over it's view counterpart for
-             contract -> contract interactions.
-    */
-    function checkpointAccount(address _account) external returns (AccountStakeData memory acctData, uint weight) {
-        (acctData, weight) = _checkpointAccount(_account, getEpoch());
-        accountStakeData[_account] = acctData;
-    }
-
-    /**
-        @notice Checkpoint an account using a specified epoch limit.
-        @dev    To use in the event that significant number of epochs have passed since last 
-                heckpoint and single call becomes too expensive.
-        @param _account Account to checkpoint.
-        @param _epoch epoch number which we want to checkpoint up to.
-        @return acctData Most recent account data written to storage.
-        @return weight Account weight for provided epoch.
-    */
-    function checkpointAccountWithLimit(
-        address _account,
-        uint _epoch
-    ) external returns (AccountStakeData memory acctData, uint weight) {
-        uint systemEpoch = getEpoch();
-        if (_epoch >= systemEpoch) _epoch = systemEpoch;
-        (acctData, weight) = _checkpointAccount(_account, _epoch);
-        accountStakeData[_account] = acctData;
-    }
-
-    function _checkpointAccount(
-        address _account,
-        uint _systemEpoch
-    ) internal returns (AccountStakeData memory acctData, uint weight) {
-        acctData = accountStakeData[_account];
-        uint lastUpdateEpoch = acctData.lastUpdateEpoch;
-
-        if (_systemEpoch == lastUpdateEpoch) {
-            return (acctData, accountPowerAt[_account][lastUpdateEpoch]);
-        }
-
-        if (_systemEpoch <= lastUpdateEpoch) revert OldEpoch();
-
-        uint pending = uint(acctData.pendingStake);
-        uint realized = acctData.realizedStake;
-
-        if (pending == 0) {
-            if (realized != 0) {
-                weight = accountPowerAt[_account][lastUpdateEpoch];
-                while (lastUpdateEpoch < _systemEpoch) {
-                    unchecked { lastUpdateEpoch++; }
-                    accountPowerAt[_account][lastUpdateEpoch] = weight;
-                }
-            }
-            accountStakeData[_account].lastUpdateEpoch = uint16(_systemEpoch);
-            acctData.lastUpdateEpoch = uint16(_systemEpoch);
-            return (acctData, weight);
-        }
-
-        weight = accountPowerAt[_account][lastUpdateEpoch];
-
-        // Add pending to realized weight
-        weight += pending;
-        realized = weight;
-
-        // Fill in any missed epochs.
-        while (lastUpdateEpoch < _systemEpoch) {
-            unchecked { lastUpdateEpoch++; }
-            accountPowerAt[_account][lastUpdateEpoch] = weight;
-        }
-
-        // Write new account data to storage.
-        acctData = AccountStakeData({
-            pendingStake: 0,
-            realizedStake: uint112(weight),
-            magicStake: acctData.magicStake, // OY
-            lastUpdateEpoch: uint16(_systemEpoch)
-        });
-    }
-
-    /**
-        @notice Get the current total system weight
-        @dev Also updates local storage values for total weights. Using
-             this function over it's `view` counterpart is preferred for
-             contract -> contract interactions.
-    */
-    function checkpointTotal() external returns (uint) {
-        uint systemEpoch = getEpoch();
-        return _checkpointTotal(systemEpoch);
-    }
-
-    /**
-        @notice Get the current total system weight
-        @dev Also updates local storage values for total weights. Using
-             this function over it's `view` counterpart is preferred for
-             contract -> contract interactions.
-    */
-    function _checkpointTotal(uint systemEpoch) internal returns (uint) {
-        // These two share a storage slot.
-        uint16 lastUpdateEpoch = totalLastUpdateEpoch;
-        uint pending = totalPending;
-
-        uint weight = totalPowerAt[lastUpdateEpoch];
-
-        if (lastUpdateEpoch == systemEpoch) {
-            return weight;
-        }
-
-        totalLastUpdateEpoch = uint16(systemEpoch);
-        weight += pending;
-        totalPending = 0;
-
-        while (lastUpdateEpoch < systemEpoch) {
-            unchecked { lastUpdateEpoch++; }
-            totalPowerAt[lastUpdateEpoch] = weight;
-        }
-
-        return weight;
     }
 
     // ------------------------------------------------------------------------
@@ -362,27 +258,24 @@ contract magicStaker is OperatorManager {
         _syncAccount(msg.sender);
     }
 
-    function setWeights(uint112[] memory _weights) public {
-        AccountWeightData memory weightData = accountWeightData[msg.sender];
-        // can only change weights once per epoch
-        require(weightData.lastUpdateEpoch < getEpoch(), "!epoch");
+    function setWeights(uint256[] memory _weights) public {
+        // can only change weights once per epoch to avoid front-running harvests
+        require(accountWeightEpoch[msg.sender] < getEpoch(), "!epoch");
         require(strategies.length == _weights.length, "!length");
 
         uint256 weightTotal;
         for (uint256 i = 0; i < strategies.length; ++i) {
             weightTotal += _weights[i];
+            accountStrategyWeight[msg.sender][i] = _weights[i];
         }
+
         // Verify user has correct total weight
         require(weightTotal == DENOM, "!totalWeight");
-
-        accountWeightData[msg.sender] = AccountWeightData({
-            weights: _weights,
-            lastUpdateEpoch: uint16(getEpoch())
-        });
 
         _syncMagicBalance(msg.sender);
         _syncAccount(msg.sender);
 
+        accountWeightEpoch[msg.sender] = getEpoch();
         emit SetWeights(msg.sender, _weights);
     }
 
@@ -392,12 +285,13 @@ contract magicStaker is OperatorManager {
     /* set all user strategy balances according to balance and weights
        balances are set on psuedo-staking contracts */
     function _syncAccount(address _account) internal {
+        uint256 slen = strategies.length;
         uint256 assignedBalance;
-        uint112 assignedWeight;
-        uint256 accountBalance = balanceOf(_account);
-        uint112[] memory accountWeights = accountWeightData[_account].weights;
-        for (uint256 i = 0; i < strategies.length; ++i) {
-            uint112 weight = accountWeights[i];
+        uint256 assignedWeight;
+        uint256 accountBalance = balanceOf[_account];
+
+        for (uint256 i = 0; i < slen; ++i) {
+            uint256 weight = accountStrategyWeight[_account][i];
             if(weight == 0) {
                 _setUserStrategyBalance(strategies[i], _account, 0);
             } else if(accountBalance == 0) {
@@ -428,22 +322,20 @@ contract magicStaker is OperatorManager {
         } else {
             strategy.setUserBalance(_account, _amount);
             if (_strategy == strategies[0]) {
-                accountStakeData[_account].magicStake = uint112(Strategy(_strategy).balanceOf(_account));
+                magicBalanceOf[_account] = Strategy(_strategy).balanceOf(msg.sender);
             }
         }
     }
 
     function _syncMagicBalance(address _account) internal {
         // if user has unclaimed magic balance, adjust
-        uint256 userMagic = accountStakeData[_account].magicStake;
+        uint256 userMagic = magicBalanceOf[_account];
         uint256 currentMagicBalance = Strategy(strategies[0]).balanceOf(_account);
         if (currentMagicBalance > userMagic) {
             uint256 diff = (currentMagicBalance - userMagic);
             if (diff > 0) {
-                accountStakeData[_account].pendingStake += uint112(diff);
-                accountStakeData[_account].magicStake = uint112(currentMagicBalance);
-                accountStakeData[_account].lastUpdateEpoch = uint16(getEpoch());
-                totalPending += uint112(diff);
+                balanceOf[_account] += diff;
+                magicBalanceOf[_account] = currentMagicBalance;
                 emit MagicClaim(_account, diff);
             }
         }
@@ -458,28 +350,25 @@ contract magicStaker is OperatorManager {
      * @param _amount Amount of RSUP to stake
      */
     function stake(uint256 _amount) external {
-        uint systemEpoch = getEpoch();
         require(_amount > 0, "0");
         // Make sure weights are set first, for account syncing
-        require(accountWeightData[msg.sender].lastUpdateEpoch != 0, "!weights");
+        require(accountWeightEpoch[msg.sender] != 0, "!weights");
 
+        /* If user significantly increases stake, delay voting power by 1 epoch
+           1. if user is increasing personal stake by more than 50%
+           2. if user is increasing total supply by more than 5% */
+        if (_amount * 2 > balanceOf[msg.sender] || (totalSupply * 500000) / DENOM < _amount) {
+            accountVoteEpoch[msg.sender] = getEpoch() + 1;
+        }
 
-
-        RSUP.safeTransferFrom(msg.sender, address(this), _amount);
-        STAKER.stake(_amount); // only stake the requested amount, since contract may contain cooldown RSUP
+        rsup.safeTransferFrom(msg.sender, address(this), _amount);
+        staker.stake(_amount); // only stake the requested amount, since contract may contain cooldown RSUP
+        balanceOf[msg.sender] += _amount;
         totalSupply += _amount;
-        
-        (AccountStakeData memory acctData, ) = _checkpointAccount(msg.sender, systemEpoch);
-        _checkpointTotal(systemEpoch);
-
-        acctData.pendingStake += uint112(_amount);
-        totalPending += uint112(_amount);
-
-        accountStakeData[msg.sender] = acctData;
         _syncMagicBalance(msg.sender);
         // change user strategy balances to reflect additional stake
         _syncAccount(msg.sender);
-        emit Stake(msg.sender, systemEpoch, _amount);
+        emit Stake(msg.sender, _amount);
     }
 
     /**
@@ -488,55 +377,49 @@ contract magicStaker is OperatorManager {
      * @param _amount Amount of RSUP to cooldown
      */
     function cooldown(uint256 _amount) external {
-        uint256 cde = STAKER.cooldownEpochs();
-        uint systemEpoch = getEpoch();
+        uint256 cde = staker.cooldownEpochs();
+        uint256 epoch = getEpoch();
 
         /* verify it is an eligible cooldown epoch
            this can change if staker changes cooldownEpochs
            will always be set to 1 epoch greater than staker cooldownEpochs
            Example: cooldown is 2 weeks, can only initiate cooldowns during every 3rd week */
-        require(systemEpoch % (cde + 1) == 0, "!epoch");
+        require(epoch % (cde + 1) == 0, "!epoch");
 
-        if (_amount == 0 || _amount > type(uint112).max) revert InvalidAmount();
-
+        require(_amount > 0, "0");
         // psuedo-claim any magic pounder share difference
-        (AccountStakeData memory acctData, ) = _checkpointAccount(msg.sender, systemEpoch);
-        if (acctData.realizedStake < _amount) revert InsufficientRealizedStake();
-        _checkpointTotal(systemEpoch);
+        _syncMagicBalance(msg.sender);
+        require(_amount <= balanceOf[msg.sender], "!balance");
 
         /* check if user has previous matured cooldowns
            there is a rare edge case where if underyling staker increases cooldownEpochs,
            and new cooldowns are inititated by other users before the first cooldown period is reached,
            a user's cooldown may be locked until the new cooldown epoch is reached
            theoretical total cooldown length: original cooldownEpoch + new cooldownEpoch - 1 */
-        if (accountCooldownData[msg.sender].amount > 0 && accountCooldownData[msg.sender].maturityEpoch <= systemEpoch) {
+        if (cooldownOf[msg.sender] > 0 && accountCooldownEpoch[msg.sender] <= epoch) {
             _unstake(msg.sender);
         }
 
         // check if existing matured community cooldowns need unstaked first
-        if (pendingCooldownEpoch <= systemEpoch) {
+        if (pendingCooldownEpoch <= epoch) {
             _rsupUnstake();
-            pendingCooldownEpoch = systemEpoch + cde + 1;
-        } else if (pendingCooldownEpoch != systemEpoch + cde + 1) {
+            pendingCooldownEpoch = epoch + cde + 1;
+        } else if (pendingCooldownEpoch != epoch + cde + 1) {
             // If pendingCooldownEpoch is out of sync with cooldownEpochs, correct
-            pendingCooldownEpoch = systemEpoch + cde + 1;
+            pendingCooldownEpoch = epoch + cde + 1;
         }
 
         // Remove from balances, supply
-        acctData.realizedStake -= uint112(_amount);
-        accountStakeData[msg.sender] = acctData;
-        totalPowerAt[systemEpoch] -= _amount;
-        accountPowerAt[msg.sender][systemEpoch] -= _amount;
+        balanceOf[msg.sender] -= _amount;
         totalSupply -= _amount;
 
         // Add to user cooldown balance
-        accountCooldownData[msg.sender].amount += _amount;
+        cooldownOf[msg.sender] += _amount;
 
         // Set user cooldown maturity epoch
-        accountCooldownData[msg.sender].maturityEpoch = pendingCooldownEpoch;
+        accountCooldownEpoch[msg.sender] = pendingCooldownEpoch;
 
         // change user strategy balances to reflect decreased balance
-        _syncMagicBalance(msg.sender);
         _syncAccount(msg.sender);
         emit Cooldown(msg.sender, _amount);
     }
@@ -546,8 +429,8 @@ contract magicStaker is OperatorManager {
      * @dev Must wait for full cooldownEpochs to pass before unstaking
      */
     function unstake() public {
-        require(accountCooldownData[msg.sender].amount > 0, "0");
-        require(accountCooldownData[msg.sender].maturityEpoch <= getEpoch(), "!epoch");
+        require(cooldownOf[msg.sender] > 0, "0");
+        require(accountCooldownEpoch[msg.sender] <= getEpoch(), "!epoch");
         _unstake(msg.sender);
     }
 
@@ -559,14 +442,14 @@ contract magicStaker is OperatorManager {
             _rsupUnstake();
             pendingCooldownEpoch = type(uint256).max;
         }
-        uint256 amount = accountCooldownData[msg.sender].amount;
-        accountCooldownData[msg.sender].amount = 0;
-        RSUP.safeTransfer(_account, amount);
+        uint256 amount = cooldownOf[_account];
+        cooldownOf[_account] = 0;
+        rsup.safeTransfer(_account, amount);
         emit Unstake(_account, amount);
     }
 
     function _rsupUnstake() internal {
-        uint256 amount = STAKER.unstake(address(this), address(this));
+        uint256 amount = staker.unstake(address(this), address(this));
         require(amount > 0, "0");
     }
 
@@ -582,12 +465,12 @@ contract magicStaker is OperatorManager {
         // It's not likely to ever become a reward token, but if it were to be added, it could interfere
         // with cooldown balances sitting in this contract.
         uint256 rsupBal;
-        if (isRewardToken[address(RSUP)]) {
-            rsupBal = RSUP.balanceOf(address(this));
+        if (isRewardToken[address(rsup)]) {
+            rsupBal = rsup.balanceOf(address(this));
         }
 
         // claim all rewards from staker
-        STAKER.getReward(address(this));
+        staker.getReward(address(this));
 
         address[10] memory positiveRewards;
         uint256[10] memory rewardBals;
@@ -596,7 +479,7 @@ contract magicStaker is OperatorManager {
         for (uint256 r = 0; r < rewards.length; ++r) {
             uint256 rewardBal = rewards[r].balanceOf(address(this));
             // if RSUP token, subtract any balance that was already here
-            if (address(rewards[r]) == address(RSUP)) {
+            if (address(rewards[r]) == address(rsup)) {
                 rewardBal -= rsupBal;
             }
             // if no rewards, skip
@@ -627,7 +510,7 @@ contract magicStaker is OperatorManager {
                 if(i == strategies.length - 1) {
                     // last strategy, assign all remaining shares to avoid rounding issues
                     uint256 lastRewardBal = rewards[r].balanceOf(address(this));
-                    if(positiveRewards[r] == address(RSUP)) {
+                    if(positiveRewards[r] == address(rsup)) {
                         lastRewardBal -= rsupBal;
                     }
                     stratShares[r] = lastRewardBal;
@@ -645,8 +528,8 @@ contract magicStaker is OperatorManager {
     // ------------------------------------------------------------------------
     function magicStake(uint256 _amount) external {
         require(msg.sender == strategies[0], "!magic");
-        RSUP.safeTransferFrom(strategies[0], address(this), _amount);
-        STAKER.stake(_amount);
+        rsup.safeTransferFrom(strategies[0], address(this), _amount);
+        staker.stake(_amount);
         totalSupply += _amount;
         emit MagicStake(_amount);
     }
@@ -718,7 +601,7 @@ contract magicStaker is OperatorManager {
 
         // Verify strategy has a desiredToken and that it is not RSUP
         address dt = strategy.desiredToken();
-        require(dt != address(0) && dt != address(RSUP), "!desiredToken");
+        require(dt != address(0) && dt != address(rsup), "!desiredToken");
 
         // Verify adding balance
         strategy.setUserBalance(address(1234), DENOM);
@@ -742,7 +625,7 @@ contract magicStaker is OperatorManager {
 
     // Set Resupply voter contract
     function setResupplyVoter() external onlyOperator {
-        address _voter = REGISTRY.getAddress("VOTER");
+        address _voter = registry.getAddress("VOTER");
         voter = Voter(_voter);
         MagicVoter(magicVoter).setResupplyVoter(_voter);
         emit ResupplyVoterSet(_voter);
