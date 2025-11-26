@@ -60,6 +60,9 @@ contract magicPounder is OperatorManager {
         if(_balance < userBalance) {
             uint256 diff = userBalance - _balance;
             uint256 removeShares = underlyingToShares(diff);
+            if(removeShares > sharesOf[_account]) {
+                removeShares = sharesOf[_account];
+            }
             sharesOf[_account] -= removeShares;
             sharesTotalSupply -= removeShares;
             totalSupply -= diff;
