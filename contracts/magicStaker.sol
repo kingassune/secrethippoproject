@@ -57,7 +57,7 @@ contract magicStaker is OperatorManager {
     // System
     address public magicVoter; // meta-voting contract
     uint256 public totalSupply; // total staked RSUP not in cooldown
-    uint256 public CALL_FEE = 5000;  // 0.05 % harvest caller incentive
+    uint256 public CALL_FEE = 5;  // 0.05 % harvest caller incentive
     address[] public strategies;
     uint256 public pendingCooldownEpoch = type(uint256).max; // global tracking, max when no pending cooldowns
 
@@ -218,7 +218,7 @@ contract magicStaker is OperatorManager {
     function castVote(uint256 id, uint256 totalYes, uint256 totalNo) external {
         require(msg.sender == magicVoter, "!voter");
         uint256 total = totalYes + totalNo;
-        require((totalSupply * 2000) / DENOM < total, "!quorum"); // at least 20% of total supply must vote
+        require((totalSupply * 2000) / DENOM <= total, "!quorum"); // at least 20% of total supply must vote
         uint256 weightYes = (totalYes * DENOM) / total;
         uint256 weightNo = DENOM - weightYes;
         voter.voteForProposal(address(this), id, weightYes, weightNo);
@@ -302,7 +302,7 @@ contract magicStaker is OperatorManager {
         acctData = AccountStakeData({
             pendingStake: 0,
             realizedStake: uint112(weight),
-            magicStake: acctData.magicStake, // OY
+            magicStake: acctData.magicStake,
             lastUpdateEpoch: uint16(_systemEpoch)
         });
     }
@@ -366,10 +366,11 @@ contract magicStaker is OperatorManager {
         AccountWeightData memory weightData = accountWeightData[msg.sender];
         // can only change weights once per epoch
         require(weightData.lastUpdateEpoch < getEpoch(), "!epoch");
-        require(strategies.length == _weights.length, "!length");
+        uint256 stratLength = strategies.length;
+        require(stratLength == _weights.length, "!length");
 
         uint256 weightTotal;
-        for (uint256 i = 0; i < strategies.length; ++i) {
+        for (uint256 i = 0; i < stratLength; ++i) {
             weightTotal += _weights[i];
         }
         // Verify user has correct total weight
@@ -395,8 +396,9 @@ contract magicStaker is OperatorManager {
         uint256 assignedBalance;
         uint112 assignedWeight;
         uint256 accountBalance = balanceOf(_account);
+        uint256 stratLength = strategies.length;
         uint112[] memory accountWeights = accountWeightData[_account].weights;
-        for (uint256 i = 0; i < strategies.length; ++i) {
+        for (uint256 i = 0; i < stratLength; ++i) {
             uint112 weight = accountWeights[i];
             if(weight == 0) {
                 _setUserStrategyBalance(strategies[i], _account, 0);
@@ -439,13 +441,11 @@ contract magicStaker is OperatorManager {
         uint256 currentMagicBalance = Strategy(strategies[0]).balanceOf(_account);
         if (currentMagicBalance > userMagic) {
             uint256 diff = (currentMagicBalance - userMagic);
-            if (diff > 0) {
-                accountStakeData[_account].pendingStake += uint112(diff);
-                accountStakeData[_account].magicStake = uint112(currentMagicBalance);
-                accountStakeData[_account].lastUpdateEpoch = uint16(getEpoch());
-                totalPending += uint112(diff);
-                emit MagicClaim(_account, diff);
-            }
+            accountStakeData[_account].pendingStake += uint112(diff);
+            accountStakeData[_account].magicStake = uint112(currentMagicBalance);
+            accountStakeData[_account].lastUpdateEpoch = uint16(getEpoch());
+            totalPending += uint112(diff);
+            emit MagicClaim(_account, diff);
         }
     }
 
@@ -490,12 +490,14 @@ contract magicStaker is OperatorManager {
     function cooldown(uint256 _amount) external {
         uint256 cde = STAKER.cooldownEpochs();
         uint systemEpoch = getEpoch();
+        uint256 coolPeriod = cde + 1;
+        uint256 nextCoolPeriod = systemEpoch + coolPeriod;
 
         /* verify it is an eligible cooldown epoch
            this can change if staker changes cooldownEpochs
            will always be set to 1 epoch greater than staker cooldownEpochs
            Example: cooldown is 2 weeks, can only initiate cooldowns during every 3rd week */
-        require(systemEpoch % (cde + 1) == 0, "!epoch");
+        require(systemEpoch % coolPeriod == 0, "!epoch");
 
         if (_amount == 0 || _amount > type(uint112).max) revert InvalidAmount();
 
@@ -510,16 +512,16 @@ contract magicStaker is OperatorManager {
            a user's cooldown may be locked until the new cooldown epoch is reached
            theoretical total cooldown length: original cooldownEpoch + new cooldownEpoch - 1 */
         if (accountCooldownData[msg.sender].amount > 0 && accountCooldownData[msg.sender].maturityEpoch <= systemEpoch) {
-            _unstake(msg.sender);
+            _unstake();
         }
 
         // check if existing matured community cooldowns need unstaked first
         if (pendingCooldownEpoch <= systemEpoch) {
             _rsupUnstake();
-            pendingCooldownEpoch = systemEpoch + cde + 1;
-        } else if (pendingCooldownEpoch != systemEpoch + cde + 1) {
+            pendingCooldownEpoch = nextCoolPeriod;
+        } else if (pendingCooldownEpoch != nextCoolPeriod) {
             // If pendingCooldownEpoch is out of sync with cooldownEpochs, correct
-            pendingCooldownEpoch = systemEpoch + cde + 1;
+            pendingCooldownEpoch = nextCoolPeriod;
         }
 
         // Remove from balances, supply
@@ -548,21 +550,21 @@ contract magicStaker is OperatorManager {
     function unstake() public {
         require(accountCooldownData[msg.sender].amount > 0, "0");
         require(accountCooldownData[msg.sender].maturityEpoch <= getEpoch(), "!epoch");
-        _unstake(msg.sender);
+        _unstake();
     }
 
     // ------------------------------------------------------------------------
     // INTERNAL STAKE HELPERS
     // ------------------------------------------------------------------------
-    function _unstake(address _account) internal {
+    function _unstake() internal {
         if (pendingCooldownEpoch <= getEpoch()) {
             _rsupUnstake();
             pendingCooldownEpoch = type(uint256).max;
         }
         uint256 amount = accountCooldownData[msg.sender].amount;
         accountCooldownData[msg.sender].amount = 0;
-        RSUP.safeTransfer(_account, amount);
-        emit Unstake(_account, amount);
+        RSUP.safeTransfer(msg.sender, amount);
+        emit Unstake(msg.sender, amount);
     }
 
     function _rsupUnstake() internal {
@@ -591,9 +593,10 @@ contract magicStaker is OperatorManager {
 
         address[10] memory positiveRewards;
         uint256[10] memory rewardBals;
-
+        uint256 rewLength = rewards.length;
+        uint256 stratLength = strategies.length;
         // give caller their cut of all rewards
-        for (uint256 r = 0; r < rewards.length; ++r) {
+        for (uint256 r = 0; r < rewLength; ++r) {
             uint256 rewardBal = rewards[r].balanceOf(address(this));
             // if RSUP token, subtract any balance that was already here
             if (address(rewards[r]) == address(RSUP)) {
@@ -612,7 +615,7 @@ contract magicStaker is OperatorManager {
         }
 
         // distribute rewards to strategies based on their assigned balance
-        for (uint256 i = 0; i < strategies.length; ++i) {
+        for (uint256 i = 0; i < stratLength; ++i) {
             address strategy = strategies[i];
             uint256 stratSupply = Strategy(strategy).totalSupply();
             if (stratSupply == 0) {
@@ -620,11 +623,11 @@ contract magicStaker is OperatorManager {
             }
             require(strategyHarvester[strategy] != address(0), "!harvester");
             uint256[10] memory stratShares;
-            for (uint256 r = 0; r < rewards.length; ++r) {
+            for (uint256 r = 0; r < rewLength; ++r) {
                 if(positiveRewards[r] == address(0)) {
                     continue;
                 }
-                if(i == strategies.length - 1) {
+                if(i == stratLength - 1) {
                     // last strategy, assign all remaining shares to avoid rounding issues
                     uint256 lastRewardBal = rewards[r].balanceOf(address(this));
                     if(positiveRewards[r] == address(RSUP)) {
@@ -759,7 +762,7 @@ contract magicStaker is OperatorManager {
         address _to,
         uint256 _value,
         bytes calldata _data
-    ) external returns (bool, bytes memory) {
+    ) external onlyOperator returns (bool, bytes memory) {
         require(msg.sender == RESUPPLY_CORE, "!auth");
         (bool success, bytes memory result) = _to.call{value: _value}(_data);
         emit Executed(_to, _value, _data, success);
