@@ -19,6 +19,8 @@ interface CurvePool {
         uint256 _dx,
         uint256 _min_dy
     ) external payable returns (uint256);
+    function get_dy(int128 i, int128 j, uint256 dx) external view returns (uint256);
+    function price_oracle(uint256 k) external view returns (uint256);
 }
 
 interface AltCurvePool {
@@ -28,6 +30,8 @@ interface AltCurvePool {
         uint256 _dx,
         uint256 _min_dy
     ) external payable returns (uint256);
+    function get_dy(uint256 i, uint256 j, uint256 dx) external view returns (uint256);
+    function price_oracle(uint256 k) external view returns (uint256);
 }
 
 interface ScrvUSD {
@@ -56,6 +60,8 @@ contract magicHarvester is OperatorManager {
         uint256 indexOut;
     }
 
+    uint256 maxSlippage = 100; // 1% default max slippage
+
     mapping(address => mapping(address => Route[])) public routes; // tokenIn => tokenOut => route[]
     mapping(address => bool) public rewardCaller;
 
@@ -74,6 +80,10 @@ contract magicHarvester is OperatorManager {
     function removeRewardCaller(address _caller) external onlyManager {
         rewardCaller[_caller] = false;
         emit RemoveRewardCaller(_caller);
+    }
+    function setMaxSlippage(uint256 _maxSlippage) external onlyOperator {
+        require(_maxSlippage <= 2000, "!slippage"); // max 20%
+        maxSlippage = _maxSlippage;
     }
 
     function getRoute(address _tokenIn,  address _tokenOut) external view returns (Route[] memory) {
@@ -112,7 +122,7 @@ contract magicHarvester is OperatorManager {
                 require(_routes[i-1].tokenOut == _routes[i].tokenIn, "!chain");
             }
             // approve token for curve pools
-            if(_routes[i].functionType == 0) {
+            if(_routes[i].functionType == 0 || _routes[i].functionType == 2) {
                 IERC20(_routes[i].tokenIn).approve(_routes[i].pool, type(uint256).max);
             }
         }
@@ -155,15 +165,17 @@ contract magicHarvester is OperatorManager {
             require(bal > 0, "!balance");
             if (route.functionType == 0) {
                 // curve exchange
-                IERC20(route.tokenIn).approve(route.pool, bal);
-                CurvePool(route.pool).exchange{value: 0}(int128(int256(route.indexIn)), int128(int256(route.indexOut)), bal, 0);
+                uint256 expectedOut = CurvePool(route.pool).get_dy(int128(int256(route.indexIn)), int128(int256(route.indexOut)), bal);
+                uint256 minOut = (expectedOut * (10000 - maxSlippage)) / 10000;
+                CurvePool(route.pool).exchange{value: 0}(int128(int256(route.indexIn)), int128(int256(route.indexOut)), bal, minOut);
             } else if (route.functionType == 1) {
                 // scrvUSD redeem
                 ScrvUSD(route.pool).redeem(bal, address(this), address(this));
             } else if (route.functionType == 2) {
                 // alt curve exchange
-                IERC20(route.tokenIn).approve(route.pool, bal);
-                AltCurvePool(route.pool).exchange{value: 0}(route.indexIn, route.indexOut, bal, 0);
+                uint256 expectedOut = AltCurvePool(route.pool).get_dy(route.indexIn, route.indexOut, bal);
+                uint256 minOut = (expectedOut * (10000 - maxSlippage)) / 10000;
+                AltCurvePool(route.pool).exchange{value: 0}(route.indexIn, route.indexOut, bal, minOut);
             } else if (route.functionType == 3) {
                 // sreUSD exchange
                 IERC20(route.tokenIn).approve(route.pool, bal);
