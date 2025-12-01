@@ -137,7 +137,7 @@ describe("Setup", function () {
                         pool: "0xEe351f12EAE8C2B8B9d1B9BFd3c5dd565234578d", 
                         tokenIn: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", 
                         tokenOut: RSUPAddress, 
-                        functionType: 2, 
+                        functionType: 4, 
                         indexIn: 0, 
                         indexOut: 1 
                     } // curve exchange

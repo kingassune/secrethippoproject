@@ -12,7 +12,7 @@ Special thanks to Gemach team for valuable insights!
 
 ## Zero slippage protection on swaps enables MEV/sandwich loss of rewards
 
-✘ Unsure of best solution. 
+✔ Added slippage controls
 
 ## notifyReward trusts declared amount; insolvency if fewer tokens actually received (fee-on-transfer/rebasing/misreported)
 
@@ -48,7 +48,7 @@ Special thanks to Gemach team for valuable insights!
 
 ## No min-shares protection on ERC4626 SreUSD.deposit enables exchange-rate sandwich to under-mint rewards
 
-✘ Unsure of best solution. 
+✘ minshares not an available input on sreusd contract
 
 ## External strategy calls in _syncAccount allow a malicious or misconfigured strategy to DoS stake/cooldown/setWeights/syncAccount
 
@@ -69,8 +69,6 @@ Special thanks to Gemach team for valuable insights!
 ## Unbounded strategy iteration in harvest enables gas-based DoS of HarvesterCaller
 
 ✘ Splitting harvest introduces strategy weight change exploit, where a user gets paid for multiple strategies. System assumes, and must maintain configuration for low number of strategies.
-
-✔ Partially addressed by expanding access control to RSUP governance, so an MIA operator cannot neglect configuration
 
 ## Mismatched units in reward split (Strategy.totalSupply vs magicStaker.totalSupply) can over-/under-pull rewards and DoS harvest
 
@@ -99,7 +97,7 @@ Special thanks to Gemach team for valuable insights!
 
 ## Rounding guard in magicPounder.underlyingToShares can DoS user syncs and staking flows
 
-✘ Intentional. Even if shares become 100 times more valuable than underlying, it only prevents sub-100 wei changes. This is to prevent syncing a balance without actually removing shares, if a user makes too small of an adjustment.
+✘ Intentional. Even if shares become 100 times more valuable than underlying, it only prevents sub-100 wei changes. This is to prevent claiming/syncing a balance without actually removing shares, if a user makes too small of an adjustment. Maybe I'm thinking about this incorrectly?
 
 ## Harvest DoS if any strategy lacks harvester mapping
 
@@ -107,11 +105,11 @@ Special thanks to Gemach team for valuable insights!
 
 ## Division-by-zero in harvest when totalSupply is zero causes global reward DoS
 
-✘ Acceptable risk. Can be mitigated with any user assigning a small amount to each strategy.
+✘ Acceptable risk. If totalSupply is zero (everyone has withdrawn 100%), any remaining funds would be small and can be claimed and rescued by DAO, or by anyone depositing.
 
 ## External cooldownEpochs trust allows Staker to lock cooldown or cause overflow in modulo check
 
-✘ Resupply Staker has bounded max cooldown already.
+✘ Resupply Staker has immutable bounded max cooldown already.
 
 ## Unchecked resupply voter address allows governance DoS/malicious Voter injection
 
@@ -123,7 +121,7 @@ Special thanks to Gemach team for valuable insights!
 
 ## Unsafe IERC20.approve usage (no SafeERC20, no zero-first) enables DoS with non-standard tokens
 
-✘ Acceptable risk. Non-standard tokens should not be added.
+✘ Non-standard tokens should not be added. Using SafeERC20 for IERC20.
 
 ## setRoute test sweeps entire tokenOut balance to caller, allowing theft of stray funds
 
@@ -139,7 +137,7 @@ Special thanks to Gemach team for valuable insights!
 
 ## Anti-whale voting delay can be bypassed by splitting deposits across transactions/epochs
 
-✘ Unsure of best solution
+✔ Now tracks realizedStake in the same manner as native RSUP staking.
 
 ## Redundant approve before ScrvUSD.redeem leaves perpetual allowance enabling future share siphoning
 
