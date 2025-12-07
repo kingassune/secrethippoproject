@@ -16,7 +16,8 @@ module.exports = {
     hardhat: {
       forking: {
         // Use an RPC URL from a provider like Alchemy, Infura, etc.
-        url: `http://localhost:8545`, // Replace with your own RPC URL
+        url: process.env.MAINNET_RPC_URL || `https://ethereum-rpc.publicnode.com`, // PublicNode RPC
+        enabled: process.env.MAINNET_RPC_URL ? true : true, // Enable forking
       }
     }
   }
