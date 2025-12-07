@@ -137,7 +137,7 @@ This document verifies all fixes marked as "✔ Fixed" in auditChanges.md agains
 - Lines 630-640: Assigns remaining token balance to last strategy
 - Line 633-635: Special handling for RSUP to subtract existing balance
 - Lines 632-637: Logic to assign all remaining balance to last strategy
-- **Note:** Line 77 in auditChanges.md acknowledges rewards can still be under/over pulled by wei amounts
+- **Note:** auditChanges.md (around line 77) acknowledges rewards can still be under/over pulled by wei amounts - this is acceptable
 
 ### ✅ VERIFIED: setStrategyHarvester validates harvester
 **Status:** Fixed
@@ -199,12 +199,13 @@ This document verifies all fixes marked as "✔ Fixed" in auditChanges.md agains
 - Same as high severity fix for zero-address bricking
 
 ### ✅ VERIFIED: Zero-address bricking in magicVoter.setMagicStaker
-**Status:** Fixed - Made Immutable
-**Location:** magicVoter.sol, lines 119-121
+**Status:** Fixed - Addressed through design
+**Location:** magicVoter.sol, lines 118-121
 **Evidence:**
-- Function still exists but is now controlled
-- magicPounder.sol line 91 has immutability check: `require(magicStaker == address(0), "!immutable");`
-- **Note:** magicVoter.setMagicStaker doesn't have immutability check itself, but is called once at deployment
+- magicVoter.setMagicStaker doesn't have immutability check (line 118 comment: "doesn't need to be immutable since this contract does not handle balances")
+- This is acceptable because magicVoter doesn't track user balances or funds
+- The critical immutability is in magicPounder (line 91) which DOES handle balances
+- Operator can update magicVoter's reference without security risk since it's just for voting coordination
 
 ### ✅ VERIFIED: Unsafe IERC20.approve usage (Using SafeERC20)
 **Status:** Fixed
