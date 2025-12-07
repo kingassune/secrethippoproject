@@ -313,6 +313,7 @@ This document verifies all fixes marked as "✔ Fixed" in auditChanges.md agains
 ## Summary
 
 ### Fixes Verified: 28 ✅
+*(Items marked as "✔ Fixed" in auditChanges.md that have been verified in code)*
 1. Unrestricted harvester route control
 2. Stale approvals in setStrategyHarvester
 3. Zero slippage protection on swaps
