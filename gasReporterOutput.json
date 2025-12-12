@@ -280,14 +280,14 @@
      267630,
      711362,
      711362,
-     1074960,
-     1074970
+     1075896,
+     1075896
     ],
     "numberOfCalls": 8,
-    "executionGasAverage": 547115,
+    "executionGasAverage": 547348,
     "calldataGasAverage": 0,
     "min": 134504,
-    "max": 1074970
+    "max": 1075896
    },
    "magicPounder_beb636bb": {
     "key": "beb636bb",
@@ -1592,16 +1592,16 @@
      0
     ],
     "gasData": [
-     895740,
-     895740,
-     1611529,
-     1611529
+     896481,
+     896481,
+     1610429,
+     1610429
     ],
     "numberOfCalls": 4,
-    "executionGasAverage": 1253635,
+    "executionGasAverage": 1253455,
     "calldataGasAverage": 0,
-    "min": 895740,
-    "max": 1611529
+    "min": 896481,
+    "max": 1610429
    },
    "magicStaker_763ad30f": {
     "key": "763ad30f",

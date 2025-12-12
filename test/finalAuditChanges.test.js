@@ -9,6 +9,10 @@ const {
   setBalance,
 } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 
+// Test constants
+const SEVEN_DAYS_IN_SECONDS = 7 * 24 * 60 * 60;
+const MAX_EXCHANGE_RATE_MULTIPLIER = 2n;
+
 describe("Final Audit Changes Verification", function () {
 
     // contracts and address variables used in tests
@@ -245,7 +249,7 @@ describe("Final Audit Changes Verification", function () {
             let received = operatorSreUSDAfter - operatorSreUSDBefore;
             expect(received).to.be.gt(0);
             // Allow up to 2x the test amount to account for any existing balance or exchange rate variations
-            let maxExpected = 10n*10n**18n * 2n;
+            let maxExpected = 10n*10n**18n * MAX_EXCHANGE_RATE_MULTIPLIER;
             expect(received).to.be.lte(maxExpected);
         });
     });
@@ -316,7 +320,7 @@ describe("Final Audit Changes Verification", function () {
             expect(balance).to.be.gt(0);
             
             // Changing weights to 0 on pounder should work
-            await ethers.provider.send("evm_increaseTime", [7 * 24 * 60 * 60]);
+            await ethers.provider.send("evm_increaseTime", [SEVEN_DAYS_IN_SECONDS]);
             await ethers.provider.send("evm_mine", []);
             
             await expect(
