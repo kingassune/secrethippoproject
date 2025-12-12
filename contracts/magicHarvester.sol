@@ -105,6 +105,7 @@ contract magicHarvester is OperatorManager {
         uint256 _testAmount,
         bool _removeApprovals
     ) external onlyOperator {
+        uint256 startTokenOut = IERC20(_tokenOut).balanceOf(address(this));
         // can pass 0 routes to delete existing route, otherwise needs validation and test
         if(_routes.length > 0) {
             require(_routes[0].tokenIn == _tokenIn, "!start");
@@ -137,7 +138,8 @@ contract magicHarvester is OperatorManager {
 
         // test route
         _process(_tokenIn, _tokenOut, _testAmount);
-        IERC20(_tokenOut).safeTransfer(msg.sender, IERC20(_tokenOut).balanceOf(address(this)));
+        uint256 endTokenOut = IERC20(_tokenOut).balanceOf(address(this));
+        IERC20(_tokenOut).safeTransfer(msg.sender, endTokenOut - startTokenOut);
     }
 
     function process(address[10] memory _tokensIn, uint256[10] memory _amountsIn, address _strategy) external returns (uint256 tokenOutBal) {
@@ -145,17 +147,23 @@ contract magicHarvester is OperatorManager {
         Strategy strategy = Strategy(_strategy);
         address strategyToken = strategy.desiredToken();
         require(strategyToken != address(0), "!tokenOut");
+        uint256 startTokenOut = IERC20(strategyToken).balanceOf(address(this));
         for (uint256 i = 0; i < _tokensIn.length; i++) {
             if(_tokensIn[i] == address(0)) {
                 break;
+            }
+            if(_amountsIn[i] == 0) {
+                continue;
             }
             require(routes[_tokensIn[i]][strategyToken].length > 0, "!route");
             _process(_tokensIn[i], strategyToken, _amountsIn[i]);
         }
         // notify strategy of reward
-        tokenOutBal = IERC20(strategyToken).balanceOf(address(this));
-        require(tokenOutBal > 0, "!reward");
-        strategy.notifyReward(tokenOutBal);
+        uint256 endTokenOut = IERC20(strategyToken).balanceOf(address(this));
+        tokenOutBal = endTokenOut - startTokenOut;
+        if(tokenOutBal > 0) {
+            strategy.notifyReward(tokenOutBal);
+        }
     }
 
     function _process(address _tokenIn, address _tokenOut, uint256 _amountIn) internal {

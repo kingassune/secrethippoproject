@@ -615,6 +615,7 @@ contract magicStaker is OperatorManager {
         }
 
         // distribute rewards to strategies based on their assigned balance
+        uint256 staticSupply = totalSupply;
         for (uint256 i = 0; i < stratLength; ++i) {
             address strategy = strategies[i];
             uint256 stratSupply = Strategy(strategy).totalSupply();
@@ -636,7 +637,7 @@ contract magicStaker is OperatorManager {
                     stratShares[r] = lastRewardBal;
                     continue;
                 }
-                stratShares[r] = (rewardBals[r] * stratSupply) / totalSupply;
+                stratShares[r] = (rewardBals[r] * stratSupply) / staticSupply;
             }
             // process rewards for strategy
             Harvester(strategyHarvester[strategy]).process(positiveRewards, stratShares, strategy);
@@ -743,9 +744,23 @@ contract magicStaker is OperatorManager {
         emit MagicVoterSet(_magicVoter);
     }
 
+    function isValidVoter(address _voter) internal view returns (bool) {
+        if(_voter == address(0)) {
+            return false;
+        }
+        if (_voter.code.length == 0) {
+            return false;
+        }
+        try Voter(_voter).minCreateProposalWeight() returns (uint256) {
+            return true;
+        } catch {
+            return false;
+        }
+    }
     // Set Resupply voter contract
     function setResupplyVoter() external onlyOperator {
         address _voter = REGISTRY.getAddress("VOTER");
+        require(isValidVoter(_voter), "!voter");
         voter = Voter(_voter);
         MagicVoter(magicVoter).setResupplyVoter(_voter);
         emit ResupplyVoterSet(_voter);

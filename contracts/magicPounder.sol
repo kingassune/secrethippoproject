@@ -44,7 +44,6 @@ contract magicPounder is OperatorManager {
         if(sharesTotalSupply == 0) {
             return _amount;
         }
-        require(_amount * sharesTotalSupply >= totalSupply, "!small");
         return (_amount * sharesTotalSupply) / totalSupply;
     }
 

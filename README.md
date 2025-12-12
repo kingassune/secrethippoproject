@@ -1,6 +1,6 @@
 # SecretHippoProject
 
-Drafts. Not fully tested. Not audited.
+[![Hound Security Audit](https://img.shields.io/badge/Audited_by-Hound-dc3545?style=flat-square&logo=security&logoColor=white)](hippofinal_security_report.html)
 
 2nd layer Stake RSUP
 
@@ -9,8 +9,6 @@ Can support multiple strategies, with initial two planned for compounding RSUP, 
 Non-transferable / Not a token. Staker dictates balances of strategies.
 
 ### To do
-
-- Peer review / Audit
 
 - UI
 

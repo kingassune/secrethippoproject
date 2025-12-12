@@ -19,6 +19,10 @@ module.exports = {
         url: process.env.MAINNET_RPC_URL || `https://ethereum-rpc.publicnode.com`, // PublicNode RPC
         enabled: process.env.MAINNET_RPC_URL ? true : true, // Enable forking
       }
+    },
+    ui: {
+      url: "http://localhost:8547",
+      chainId: 31337
     }
   }
 };

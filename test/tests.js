@@ -75,6 +75,7 @@ describe("Setup", function () {
             await setBalance(users[i], ethers.toBigInt("10000000000000000000"));
         }
         await RSUP.connect(signers.RSUPwhale).transfer(users[8], 1000000n*10n**18n);
+        await RSUP.connect(signers.RSUPwhale).transfer(operator, 1000000n*10n**18n);
 
     });
 
@@ -217,6 +218,7 @@ describe("Setup", function () {
                 expect(await MagicStaker.connect(signers.users[i]).setWeights([strat0w, strat1w])).to.be.not.reverted;
             }
             expect(await MagicStaker.connect(signers.users[8]).setWeights([6000, 4000])).to.be.not.reverted;
+            expect(await MagicStaker.connect(signers.operator).setWeights([6000, 4000])).to.be.not.reverted;
         });
 
         // Token approval
@@ -224,6 +226,7 @@ describe("Setup", function () {
             for(var i=0; i<9; i++) {
                 expect(await RSUP.connect(signers.users[i]).approve(MagicStakerAddress, 1000000000n*10n**18n)).to.be.not.reverted;
             }
+            expect(await RSUP.connect(signers.operator).approve(MagicStakerAddress, 1000000000n*10n**18n)).to.be.not.reverted;
         });
 
         // Deposit
@@ -232,6 +235,7 @@ describe("Setup", function () {
                 expect(await MagicStaker.connect(signers.users[i]).stake(100000n*10n**18n)).to.be.not.reverted;
             }
             expect(await MagicStaker.connect(signers.users[8]).stake(1000000n*10n**18n)).to.be.not.reverted;
+            expect(await MagicStaker.connect(signers.operator).stake(100000n*10n**18n)).to.be.not.reverted;
             var accountData = await MagicStaker.accountStakeData(users[3]);
             //console.log("User 3 stake data:", accountData);
         });
