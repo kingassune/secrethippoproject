@@ -244,7 +244,9 @@ describe("Final Audit Changes Verification", function () {
             // Operator should receive approximately the swapped amount, not more
             let received = operatorSreUSDAfter - operatorSreUSDBefore;
             expect(received).to.be.gt(0);
-            expect(received).to.be.lte(20n*10n**18n); // Should be close to test amount
+            // Allow up to 2x the test amount to account for any existing balance or exchange rate variations
+            let maxExpected = 10n*10n**18n * 2n;
+            expect(received).to.be.lte(maxExpected);
         });
     });
 
