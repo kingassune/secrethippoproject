@@ -77,17 +77,20 @@
     "fnSig": "addRewardCaller(address)",
     "intrinsicGas": [
      21432,
+     21432,
      21432
     ],
     "callData": [
+     0,
      0,
      0
     ],
     "gasData": [
      49632,
+     49632,
      49632
     ],
-    "numberOfCalls": 2,
+    "numberOfCalls": 3,
     "executionGasAverage": 49632,
     "calldataGasAverage": 0,
     "min": 49632,
@@ -101,17 +104,23 @@
     "fnSig": "approveStrategy(address,bool)",
     "intrinsicGas": [
      21572,
+     21560,
+     21572,
      21560
     ],
     "callData": [
+     0,
+     0,
      0,
      0
     ],
     "gasData": [
      56475,
+     56475,
+     56540,
      56540
     ],
-    "numberOfCalls": 2,
+    "numberOfCalls": 4,
     "executionGasAverage": 56508,
     "calldataGasAverage": 0,
     "min": 56475,
@@ -246,21 +255,39 @@
     "fnSig": "setRoute(address,(address,address,address,uint256,uint256,uint256)[],address,uint256,bool)",
     "intrinsicGas": [
      28396,
+     23896,
+     23896,
+     23896,
+     23896,
+     23896,
+     28396,
      23896
     ],
     "callData": [
      0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
      0
     ],
     "gasData": [
+     134504,
+     134504,
      267630,
-     1076940
+     267630,
+     711362,
+     711362,
+     1073952,
+     1073962
     ],
-    "numberOfCalls": 2,
-    "executionGasAverage": 672285,
+    "numberOfCalls": 8,
+    "executionGasAverage": 546863,
     "calldataGasAverage": 0,
-    "min": 267630,
-    "max": 1076940
+    "min": 134504,
+    "max": 1073962
    },
    "magicPounder_beb636bb": {
     "key": "beb636bb",
@@ -390,15 +417,18 @@
     "method": "setMagicStaker",
     "fnSig": "setMagicStaker(address)",
     "intrinsicGas": [
+     21432,
      21432
     ],
     "callData": [
+     0,
      0
     ],
     "gasData": [
+     73378,
      73378
     ],
-    "numberOfCalls": 1,
+    "numberOfCalls": 2,
     "executionGasAverage": 73378,
     "calldataGasAverage": 0,
     "min": 73378,
@@ -1333,17 +1363,20 @@
     "fnSig": "addStrategy(address)",
     "intrinsicGas": [
      21420,
+     21420,
      21420
     ],
     "callData": [
+     0,
      0,
      0
     ],
     "gasData": [
      91622,
+     91622,
      91622
     ],
-    "numberOfCalls": 2,
+    "numberOfCalls": 3,
     "executionGasAverage": 91622,
     "calldataGasAverage": 0,
     "min": 91622,
@@ -1548,21 +1581,27 @@
     "fnSig": "harvest()",
     "intrinsicGas": [
      21064,
+     21064,
+     21064,
      21064
     ],
     "callData": [
      0,
+     0,
+     0,
      0
     ],
     "gasData": [
-     1611555,
-     1611555
+     894926,
+     894926,
+     1610593,
+     1610593
     ],
-    "numberOfCalls": 2,
-    "executionGasAverage": 1611555,
+    "numberOfCalls": 4,
+    "executionGasAverage": 1252760,
     "calldataGasAverage": 0,
-    "min": 1611555,
-    "max": 1611555
+    "min": 894926,
+    "max": 1610593
    },
    "magicStaker_763ad30f": {
     "key": "763ad30f",
@@ -1726,17 +1765,23 @@
     "fnSig": "setStrategyHarvester(address,address,bool)",
     "intrinsicGas": [
      21940,
+     21928,
+     21940,
      21928
     ],
     "callData": [
+     0,
+     0,
      0,
      0
     ],
     "gasData": [
      85022,
+     85022,
+     146384,
      146384
     ],
-    "numberOfCalls": 2,
+    "numberOfCalls": 4,
     "executionGasAverage": 115703,
     "calldataGasAverage": 0,
     "min": 85022,
@@ -1749,6 +1794,10 @@
     "method": "setWeights",
     "fnSig": "setWeights(uint112[])",
     "intrinsicGas": [
+     21648,
+     21648,
+     21624,
+     21624,
      21648,
      21648,
      21648,
@@ -1794,9 +1843,15 @@
      0,
      0,
      0,
+     0,
+     0,
+     0,
+     0,
      0
     ],
     "gasData": [
+     102634,
+     102634,
      121537,
      121537,
      121537,
@@ -1817,13 +1872,15 @@
      121537,
      121537,
      121537,
+     121537,
+     126363,
      159211,
      159211
     ],
-    "numberOfCalls": 22,
-    "executionGasAverage": 124962,
+    "numberOfCalls": 26,
+    "executionGasAverage": 123167,
     "calldataGasAverage": 0,
-    "min": 121537,
+    "min": 102634,
     "max": 159211
    },
    "magicStaker_a694fc3a": {
@@ -1833,6 +1890,8 @@
     "method": "stake",
     "fnSig": "stake(uint256)",
     "intrinsicGas": [
+     21276,
+     21276,
      21288,
      21288,
      21288,
@@ -1874,6 +1933,8 @@
      0,
      0,
      0,
+     0,
+     0,
      0
     ],
     "gasData": [
@@ -1895,14 +1956,16 @@
      273494,
      285794,
      285794,
+     310482,
      473429,
-     473429
+     473429,
+     478217
     ],
-    "numberOfCalls": 20,
-    "executionGasAverage": 291836,
+    "numberOfCalls": 22,
+    "executionGasAverage": 301156,
     "calldataGasAverage": 0,
     "min": 268694,
-    "max": 473429
+    "max": 478217
    },
    "magicStaker_d574ea3d": {
     "key": "d574ea3d",
@@ -2199,15 +2262,18 @@
     "method": "setMagicStaker",
     "fnSig": "setMagicStaker(address)",
     "intrinsicGas": [
+     21432,
      21432
     ],
     "callData": [
+     0,
      0
     ],
     "gasData": [
+     46052,
      46052
     ],
-    "numberOfCalls": 1,
+    "numberOfCalls": 2,
     "executionGasAverage": 46052,
     "calldataGasAverage": 0,
     "min": 46052,
