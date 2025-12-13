@@ -59,10 +59,13 @@ Echidna runs automatically on every push and pull request via GitHub Actions (`.
 ### Fuzzing Invariants
 
 The `EchidnaTest` harness validates critical system invariants:
-- Balance and supply checks remain non-negative
-- Fee constraints are maintained (CALL_FEE ≤ MAX_CALL_FEE)
-- Strategy array integrity (strategy 0 always exists)
-- Voting power calculations are valid
-- Epoch calculations don't overflow
+- Balance and supply values remain non-negative after any operation
+- Arithmetic operations (add/subtract) maintain overflow/underflow protection
+- Contract balance is always non-negative
+- Protocol constants maintain expected values (DENOM = 10000, MAX_CALL_FEE = 100)
 
-For more details, see `test/fuzzing/EchidnaTest.sol`.
+The test harness includes state mutation functions that Echidna uses to explore the state space:
+- `addBalance()` / `subBalance()` - Simulate balance changes with overflow protection
+- `addSupply()` / `subSupply()` - Simulate supply changes with underflow protection
+
+For more details and to add contract-specific invariants, see `test/fuzzing/EchidnaTest.sol`.
