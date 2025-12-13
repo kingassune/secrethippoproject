@@ -12,7 +12,9 @@ test/fuzzing/
 ├── INVARIANTS.md                  # Detailed invariant documentation
 ├── FuzzBase.sol                   # Base contract with setup and utilities
 ├── MockERC20.sol                  # Simple ERC20 for testing
-├── ComprehensiveFuzzTest.sol      # Main fuzzing test contract
+├── ComprehensiveFuzzTest.sol      # General system invariants (18 tests)
+├── MagicStakerFuzzTest.sol        # Protocol-specific invariants (15 tests)
+├── run-fuzzing.sh                 # Test runner script
 └── EchidnaTest.sol               # Original basic test (legacy)
 ```
 
@@ -37,10 +39,18 @@ test/fuzzing/
 
 #### Basic Test Run
 ```bash
-# Run comprehensive fuzzing tests
+# Run comprehensive general invariant tests
 echidna test/fuzzing/ComprehensiveFuzzTest.sol \
   --contract ComprehensiveFuzzTest \
   --config echidna.yaml
+
+# Run protocol-specific magicStaker tests
+echidna test/fuzzing/MagicStakerFuzzTest.sol \
+  --contract MagicStakerFuzzTest \
+  --config echidna.yaml
+
+# Or use the provided script
+./test/fuzzing/run-fuzzing.sh basic
 ```
 
 #### Extended Test Run (1+ hour)
@@ -76,7 +86,7 @@ Abstract base contract providing:
 
 ### ComprehensiveFuzzTest.sol
 
-Main test contract with 18 invariants across 6 categories:
+General system test contract with 18 invariants across 6 categories:
 
 1. **Solvency (2 invariants)**
    - Contract balance covers deposits
@@ -104,6 +114,25 @@ Main test contract with 18 invariants across 6 categories:
 6. **Relationship (2 invariants)**
    - Supply stable
    - Constants immutable
+
+### MagicStakerFuzzTest.sol
+
+Protocol-specific test contract with 15 invariants for magicStaker:
+
+1. **Balance composition** - realized + pending = balance
+2. **Supply accounting** - total supply = sum of balances
+3. **Weight allocation** - weights sum to exactly DENOM
+4. **Strategy immutability** - Strategy 0 never changes
+5. **Strategy bounds** - 1-10 strategies
+6. **Fee limits** - Call fee ≤ MAX_CALL_FEE
+7. **Constants** - DENOM and MAX_CALL_FEE immutable
+8. **Epoch monotonicity** - Epochs advance forward
+9. **Voting power** - Never exceeds total supply
+10. **Cooldown timing** - Respects maturity constraints
+11. **Supply solvency** - Contract holds ≥ totalSupply
+12. **Realized bounds** - Realized stake ≤ totalSupply
+13. **Pending bounds** - Pending stake ≤ totalSupply
+14. **Update epoch** - Last update never in future
 
 ### Multi-Actor Testing
 
@@ -288,14 +317,21 @@ timeout: 600  # 10 minutes
 
 This test suite meets the following criteria:
 
-✅ **5+ Critical Invariants**: 18 invariants implemented
-- Solvency: 2
-- Math Safety: 3
-- Access Control: 2
-- State Machine: 3
-- Economic: 3
-- Relationship: 2
-- Additional: 3
+✅ **5+ Critical Invariants**: 33 total invariants implemented
+- ComprehensiveFuzzTest: 18 general system invariants
+  - Solvency: 2
+  - Math Safety: 3
+  - Access Control: 2
+  - State Machine: 3
+  - Economic: 3
+  - Relationship: 2
+  - Additional: 3
+- MagicStakerFuzzTest: 15 protocol-specific invariants
+  - Balance & Supply: 3
+  - Weights & Strategies: 3
+  - Access & Constants: 2
+  - Time & State: 4
+  - Bounds & Safety: 3
 
 ⏳ **1+ Hour Campaign**: Ready to run (command provided)
 

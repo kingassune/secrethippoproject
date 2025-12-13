@@ -56,6 +56,16 @@ jobs:
           solc-version: 0.8.30
         continue-on-error: true
       
+      - name: Run Echidna (MagicStaker Protocol Tests)
+        uses: crytic/echidna-action@v2
+        with:
+          files: test/fuzzing/MagicStakerFuzzTest.sol
+          contract: MagicStakerFuzzTest
+          config: echidna.yaml
+          echidna-version: latest
+          solc-version: 0.8.30
+        continue-on-error: true
+      
       - name: Upload Echidna results
         uses: actions/upload-artifact@v4
         if: always()
