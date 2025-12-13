@@ -134,6 +134,7 @@ contract MagicStakerFuzzTest is FuzzBase {
      */
     function cooldown(uint256 amount) public {
         // Must be cooldown epoch
+        // cooldownEpochs+1 represents the cooldown period (e.g., if cooldown is 2 weeks, can only initiate every 3rd week)
         if (currentEpoch % (cooldownEpochs + 1) != 0) return;
         
         AccountStakeData storage acctData = accountStakeData[msg.sender];

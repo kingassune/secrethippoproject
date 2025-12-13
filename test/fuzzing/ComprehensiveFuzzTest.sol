@@ -332,13 +332,14 @@ contract ComprehensiveFuzzTest is FuzzBase {
     }
     
     /**
-     * @notice INVARIANT: Total fees collected never exceed rewards processed
-     * @dev Ensures fee accounting is not creating value from nothing
+     * @notice INVARIANT: Total fees collected bounded by realistic maximum
+     * @dev Ensures fee accounting doesn't explode beyond reasonable bounds
+     * Fees should never exceed the total staked amount (sanity check)
      */
     function echidna_economic_fees_reasonable() public view returns (bool) {
-        // Fees should be reasonable relative to system size
-        // This is a simplified check
-        return totalFeesCollected >= 0; // Always true, but tracks the property
+        // Fees collected should be reasonable - never more than total system value
+        // This catches accounting bugs where fees grow unbounded
+        return totalFeesCollected <= totalStaked + 1000 ether; // Allow some buffer
     }
     
     /**
