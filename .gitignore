@@ -17,5 +17,6 @@ node_modules
 ignition/deployments/chain-31337
 .vscode/settings.json
 
-# Echidna fuzzing corpus
+# Echidna fuzzing corpus and artifacts
 echidna-corpus
+crytic-export
