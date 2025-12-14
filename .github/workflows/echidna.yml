@@ -37,6 +37,7 @@ jobs:
         run: npx hardhat compile
       
       - name: Run Echidna (Basic Tests)
+        id: echidna-basic
         uses: crytic/echidna-action@v2
         with:
           files: test/fuzzing/EchidnaTest.sol
@@ -47,6 +48,7 @@ jobs:
         continue-on-error: true
       
       - name: Run Echidna (Comprehensive Tests)
+        id: echidna-comprehensive
         uses: crytic/echidna-action@v2
         with:
           files: test/fuzzing/ComprehensiveFuzzTest.sol
@@ -57,6 +59,7 @@ jobs:
         continue-on-error: true
       
       - name: Run Echidna (MagicStaker Protocol Tests)
+        id: echidna-protocol
         uses: crytic/echidna-action@v2
         with:
           files: test/fuzzing/MagicStakerFuzzTest.sol
@@ -65,6 +68,46 @@ jobs:
           echidna-version: latest
           solc-version: 0.8.30
         continue-on-error: true
+      
+      - name: Generate test summary
+        if: always()
+        run: |
+          echo "# Echidna Fuzzing Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Test Suite Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.echidna-basic.outcome }}" == "success" ]; then
+            echo "✅ **Basic Tests**: PASSED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Basic Tests**: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ steps.echidna-comprehensive.outcome }}" == "success" ]; then
+            echo "✅ **Comprehensive Tests**: PASSED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Comprehensive Tests**: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ steps.echidna-protocol.outcome }}" == "success" ]; then
+            echo "✅ **Protocol-Specific Tests**: PASSED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Protocol-Specific Tests**: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Invariants Tested" >> $GITHUB_STEP_SUMMARY
+          echo "- 33 total invariants across all test suites" >> $GITHUB_STEP_SUMMARY
+          echo "- ComprehensiveFuzzTest: 18 general system invariants" >> $GITHUB_STEP_SUMMARY
+          echo "- MagicStakerFuzzTest: 15 protocol-specific invariants" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- Test limit: 50,000 sequences" >> $GITHUB_STEP_SUMMARY
+          echo "- Sequence length: 100 transactions" >> $GITHUB_STEP_SUMMARY
+          echo "- Multi-actor testing: 4 addresses" >> $GITHUB_STEP_SUMMARY
+          echo "- Coverage tracking: Enabled" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Review the uploaded artifacts for detailed results and coverage data." >> $GITHUB_STEP_SUMMARY
       
       - name: Upload Echidna results
         uses: actions/upload-artifact@v4
