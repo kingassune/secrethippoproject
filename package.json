@@ -1,6 +1,15 @@
 {
   "name": "testing-hardhat",
   "version": "1.0.0",
+  "scripts": {
+    "test": "hardhat test",
+    "compile": "hardhat compile",
+    "fuzz:basic": "./test/fuzzing/run-fuzzing.sh basic",
+    "fuzz:standard": "./test/fuzzing/run-fuzzing.sh standard",
+    "fuzz:extended": "./test/fuzzing/run-fuzzing.sh extended",
+    "fuzz:coverage": "./test/fuzzing/run-fuzzing.sh coverage",
+    "fuzz:protocol": "./test/fuzzing/run-fuzzing.sh protocol"
+  },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
     "@nomicfoundation/hardhat-ethers": "^3.1.0",
